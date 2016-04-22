@@ -1,0 +1,1884 @@
+/*
+	Copyright (C) 2016 Commtech, Inc.
+
+	This file is part of synccom-linux.
+
+	synccom-linux is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	synccom-linux is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with synccom-linux.	If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+#include <linux/version.h> /* LINUX_VERSION_CODE, KERNEL_VERSION */
+
+#include <asm/uaccess.h> /* copy_*_user in <= 2.6.24 */
+
+#include "port.h"
+#include "frame.h" /* struct synccom_frame */
+#include "card.h" /* synccom_card_* */
+#include "utils.h" /* return_{val_}_if_untrue, chars_to_u32, ... */
+#include "config.h" /* DEVICE_NAME, DEFAULT_* */
+#include "isr.h" /* synccom_isr */
+#include "sysfs.h" /* port_*_attribute_group */
+
+
+void synccom_port_execute_GO_R(struct synccom_port *port);
+void synccom_port_execute_STOP_R(struct synccom_port *port);
+void synccom_port_execute_STOP_T(struct synccom_port *port);
+void synccom_port_execute_RST_R(struct synccom_port *port);
+__u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
+							 unsigned register_offset);
+__u32 synccom_port_cont_read2(struct synccom_port *port);
+__u32 synccom_port_cont_read3(struct synccom_port *port);
+__u32 synccom_port_cont_read4(struct synccom_port *port);
+extern unsigned force_fifo;
+
+/*
+	This handles initialization on a port level. So things that each port have
+	will be initialized in this function. /port/ nodes, registers, clock,
+	and interrupts all happen here because it is specific to the port.
+*/
+
+
+int initialize(struct synccom_port *port){
+	
+	char clock_bits[20] = DEFAULT_CLOCK_BITS;
+	
+	
+	sema_init(&port->write_semaphore, 1);
+	sema_init(&port->read_semaphore, 1);
+	
+	init_waitqueue_head(&port->input_queue);
+	init_waitqueue_head(&port->output_queue);
+	
+	
+	port->memory_cap.input = DEFAULT_INPUT_MEMORY_CAP_VALUE;
+	port->memory_cap.output = DEFAULT_OUTPUT_MEMORY_CAP_VALUE;
+
+	port->pending_iframe = 0;
+	port->pending_oframe = 0;
+
+	spin_lock_init(&port->board_settings_spinlock);
+	spin_lock_init(&port->board_rx_spinlock);
+	spin_lock_init(&port->board_tx_spinlock);
+
+	spin_lock_init(&port->istream_spinlock);
+	spin_lock_init(&port->pending_iframe_spinlock);
+	spin_lock_init(&port->pending_oframe_spinlock);
+	spin_lock_init(&port->sent_oframes_spinlock);
+	spin_lock_init(&port->queued_oframes_spinlock);
+	spin_lock_init(&port->queued_iframes_spinlock);
+	
+	
+	synccom_port_set_append_status(port, DEFAULT_APPEND_STATUS_VALUE);
+	synccom_port_set_append_timestamp(port, DEFAULT_APPEND_TIMESTAMP_VALUE);
+	synccom_port_set_ignore_timeout(port, DEFAULT_IGNORE_TIMEOUT_VALUE);
+	synccom_port_set_tx_modifiers(port, DEFAULT_TX_MODIFIERS_VALUE);
+	synccom_port_set_rx_multiple(port, DEFAULT_RX_MULTIPLE_VALUE);
+	
+	
+	SYNCCOM_REGISTERS_INIT(port->register_storage);
+
+
+	port->register_storage.FIFOT = DEFAULT_FIFOT_VALUE;
+	port->register_storage.CCR0 = DEFAULT_CCR0_VALUE;
+	port->register_storage.CCR1 = DEFAULT_CCR1_VALUE;
+	port->register_storage.CCR2 = DEFAULT_CCR2_VALUE;
+	port->register_storage.BGR = DEFAULT_BGR_VALUE;
+	port->register_storage.SSR = DEFAULT_SSR_VALUE;
+	port->register_storage.SMR = DEFAULT_SMR_VALUE;
+	port->register_storage.TSR = DEFAULT_TSR_VALUE;
+	port->register_storage.TMR = DEFAULT_TMR_VALUE;
+	port->register_storage.RAR = DEFAULT_RAR_VALUE;
+	port->register_storage.RAMR = DEFAULT_RAMR_VALUE;
+	port->register_storage.PPR = DEFAULT_PPR_VALUE;
+	port->register_storage.TCR = DEFAULT_TCR_VALUE;
+	port->register_storage.IMR = DEFAULT_IMR_VALUE;
+	port->register_storage.DPLLR = DEFAULT_DPLLR_VALUE;
+	port->register_storage.FCR = DEFAULT_FCR_VALUE;
+    
+	port->bulk_in_urb = usb_alloc_urb(0, GFP_KERNEL);
+	port->bulk_in_buffer = kmalloc(514, GFP_KERNEL);
+	port->bulk_in_urb2 = usb_alloc_urb(0, GFP_KERNEL);
+	port->bulk_in_buffer2 = kmalloc(514, GFP_KERNEL);
+	port->bulk_in_urb3 = usb_alloc_urb(0, GFP_KERNEL);
+	port->bulk_in_buffer3 = kmalloc(514, GFP_KERNEL);
+	port->bulk_in_urb4 = usb_alloc_urb(0, GFP_KERNEL);
+	port->bulk_in_buffer4 = kmalloc(514, GFP_KERNEL);
+	port->masterbuf = kmalloc(1000000, GFP_KERNEL);
+	
+		
+	
+	port->bulk_out_urb = usb_alloc_urb(0, GFP_KERNEL);
+	port->bulk_out_buffer = kmalloc(8, GFP_KERNEL);
+	port->mbsize = 0;
+	port->running_frame_count = 0;
+	
+	synccom_port_set_clock_bits(port, clock_bits);
+	synccom_port_set_registers(port, &port->register_storage);
+    INIT_LIST_HEAD(&port->list);
+	synccom_flist_init(&port->queued_oframes);
+	synccom_flist_init(&port->sent_oframes);
+	synccom_flist_init(&port->queued_iframes);
+	
+	setup_timer(&port->timer, &timer_handler, (unsigned long)port);
+	
+	
+	tasklet_init(&port->send_oframe_tasklet, oframe_worker, (unsigned long)port);
+	tasklet_init(&port->clear_oframe_tasklet, clear_oframe_worker, (unsigned long)port);
+	tasklet_init(&port->iframe_tasklet, iframe_worker, (unsigned long)port);
+	tasklet_init(&port->istream_tasklet, istream_worker, (unsigned long)port);
+	
+	synccom_port_execute_RRES(port);
+	synccom_port_execute_TRES(port);
+	mod_timer(&port->timer, jiffies + msecs_to_jiffies(20));
+	
+	return 0;
+}
+
+
+void synccom_port_delete(struct synccom_port *port)
+{
+	unsigned irq_num = 0;
+	unsigned long stream_flags = 0;
+	unsigned long queued_iframes_flags = 0;
+	unsigned long queued_oframes_flags = 0;
+	unsigned long sent_oframes_flags = 0;
+
+	return_if_untrue(port);
+
+	/* Stops the the timer and transmit repeat abailities if they are on. */
+	synccom_port_set_register(port, 0, CMDR_OFFSET, 0x04000002);
+
+	del_timer(&port->timer);
+
+	irq_num = synccom_card_get_irq(port->card);
+	free_irq(irq_num, port);
+
+	if (synccom_port_has_dma(port)) {
+		synccom_port_execute_STOP_T(port);
+		synccom_port_execute_STOP_R(port);
+		synccom_port_execute_RST_T(port);
+		synccom_port_execute_RST_R(port);
+
+		synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000000);
+		synccom_port_set_register(port, 2, DMA_TX_BASE_OFFSET, 0x00000000);
+
+		pci_unmap_single(port->card->pci_dev, port->null_handle,
+						 sizeof(*port->null_descriptor), DMA_TO_DEVICE);
+
+		kfree(port->null_descriptor);
+	}
+
+	spin_lock_irqsave(&port->istream_spinlock, stream_flags);
+	synccom_frame_delete(port->istream);
+	spin_unlock_irqrestore(&port->istream_spinlock, stream_flags);
+
+	spin_lock_irqsave(&port->queued_iframes_spinlock, queued_iframes_flags);
+	synccom_flist_delete(&port->queued_iframes);
+	spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_iframes_flags);
+
+	spin_lock_irqsave(&port->queued_oframes_spinlock, queued_oframes_flags);
+	synccom_flist_delete(&port->queued_oframes);
+	spin_unlock_irqrestore(&port->queued_oframes_spinlock, queued_oframes_flags);
+
+	spin_lock_irqsave(&port->sent_oframes_spinlock, sent_oframes_flags);
+	synccom_flist_delete(&port->sent_oframes);
+	spin_unlock_irqrestore(&port->sent_oframes_spinlock, sent_oframes_flags);
+
+#ifdef DEBUG
+	debug_interrupt_tracker_delete(port->interrupt_tracker);
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18)
+	device_destroy(port->class, port->dev_t);
+#endif
+
+	cdev_del(&port->cdev);
+
+	if (port->name)
+		kfree(port->name);
+
+	kfree(port);
+}
+
+void synccom_port_reset_timer(struct synccom_port *port)
+{
+	
+	if (mod_timer(&port->timer, jiffies + msecs_to_jiffies(1)))
+		dev_err(port->device, "mod_timer\n");
+}
+
+/* Basic check to see if the CE bit is set. */
+unsigned synccom_port_timed_out(struct synccom_port *port)
+{
+	__u32 star_value = 0;
+	unsigned i = 0;
+
+	return_val_if_untrue(port, 0);
+
+	for (i = 0; i < DEFAULT_TIMEOUT_VALUE; i++) {
+		star_value = synccom_port_get_register(port, 0, STAR_OFFSET);
+
+		if ((star_value & CE_BIT) == 0)
+			return 0;
+	}
+
+	return 1;
+}
+
+/* Create the data structures the work horse functions use to send data. */
+int synccom_port_write(struct synccom_port *port, const char *data, unsigned length)
+{
+	
+	struct synccom_frame *frame = 0;
+	unsigned long queued_flags = 0;
+    
+	
+	int a;
+	
+	
+	
+	return_val_if_untrue(port, 0);
+    int count;
+	/* Checks to make sure there is a clock present. */
+	
+
+	frame = synccom_frame_new(port);
+
+	if (!frame)
+		return -ENOMEM;
+
+	synccom_frame_add_data_from_user(frame, data, length);
+   
+   port->pending_oframe = frame;
+ 
+  
+
+	
+	spin_lock(&port->queued_oframes_spinlock);
+	synccom_flist_add_frame(&port->queued_oframes, frame);
+	spin_unlock(&port->queued_oframes_spinlock);
+
+	
+    oframe_worker(port);
+	
+	return 0;
+}
+
+/*
+	Handles taking the frames already retrieved from the card and giving them
+	to the user. This is purely a helper for the synccom_port_read function.
+*/
+ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf, size_t buf_length)
+{
+	printk(KERN_INFO "frame read"); 
+	
+	struct synccom_frame *frame = 0;
+	unsigned remaining_buf_length = 0;
+	int max_frame_length = 0;
+	unsigned current_frame_length = 0;
+	unsigned out_length = 0;
+	unsigned long queued_flags = 0;
+
+	return_val_if_untrue(port, 0);
+
+	do {
+		remaining_buf_length = buf_length - out_length;
+
+		if (port->append_status && port->append_timestamp)
+			max_frame_length = remaining_buf_length - sizeof(synccom_timestamp);
+		else if (port->append_status)
+			max_frame_length = remaining_buf_length;
+		else if (port->append_timestamp)
+			max_frame_length = remaining_buf_length + 2 - sizeof(synccom_timestamp);
+		else
+			max_frame_length = remaining_buf_length + 2; // Status length
+
+		if (max_frame_length < 0)
+			break;
+
+		spin_lock(&port->queued_iframes_spinlock);
+		frame = synccom_flist_remove_frame_if_lte(&port->queued_iframes, max_frame_length);
+		spin_unlock(&port->queued_iframes_spinlock);
+
+		if (!frame)
+			break;
+
+		current_frame_length = synccom_frame_get_length(frame);
+		current_frame_length -= (!port->append_status) ? 2 : 0;
+
+		synccom_frame_remove_data(frame, buf + out_length, current_frame_length);
+		out_length += current_frame_length;
+
+		if (port->append_timestamp) {
+			memcpy(buf + out_length, &frame->timestamp, sizeof(frame->timestamp));
+			current_frame_length += sizeof(frame->timestamp);
+			out_length += sizeof(frame->timestamp);
+		}
+
+		synccom_frame_delete(frame);
+	}
+	while (port->rx_multiple);
+
+	if (out_length == 0)
+		return -ENOBUFS;
+
+	return out_length;
+}
+
+/*
+	Handles taking the streams already retrieved from the card and giving them
+	to the user. This is purely a helper for the synccom_port_read function.
+*/
+ssize_t synccom_port_stream_read(struct synccom_port *port, char *buf,
+							  size_t buf_length)
+{
+    /*streaming mode will return all available data to the user, no framing 
+	  mechanism is used. If there is more data available than the size of 
+	  users buffer, the user buffer will be filled and returned.*/
+	
+	
+	
+	unsigned out_length = 0;
+	unsigned long flags;
+
+	return_val_if_untrue(port, 0);
+
+	spin_lock(&port->istream_spinlock);
+	
+		out_length = min(buf_length, port->mbsize);
+		copy_to_user(buf, port->masterbuf, out_length);
+		port->mbsize -= out_length;
+		memmove(port->masterbuf, port->masterbuf + out_length, port->mbsize);
+	
+	spin_unlock(&port->istream_spinlock);
+
+	return out_length;
+}
+
+/*
+	Returns -ENOBUFS if count is smaller than pending frame size
+	Buf needs to be a user buffer
+*/
+ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
+{
+	printk(KERN_INFO "port read"); 
+	int framesize = 0;
+	int finalsize = 0;
+	int framecount = 0;
+	if (synccom_port_is_streaming(port))
+		return synccom_port_stream_read(port, buf, count);
+	else
+	
+	
+	
+
+		
+    update_bc_buffer(port);
+		
+    framesize = port->bc_buffer[0];
+	
+	//make sure frames of data are available
+	if((framesize > port->mbsize) || (framesize < 1) || (port->running_frame_count < 1))
+	  return 0;
+	  
+	printk(KERN_INFO "framesize = %d", framesize);
+	port->running_frame_count -= 1;
+	printk(KERN_INFO "running count = %d", port->running_frame_count);
+	memmove(port->bc_buffer, port->bc_buffer + 1, port->running_frame_count * 8);
+	
+	
+	//remove or keep status bytes
+	finalsize = framesize;
+	finalsize -= (!port->append_status) ? 2 : 0;
+		  
+	spin_lock(&port->queued_iframes_spinlock);
+	printk(KERN_INFO "mbsize %d\n", port->mbsize);
+		copy_to_user(buf, port->masterbuf, finalsize);
+		port->mbsize -= (framesize);
+		   
+		memmove(port->masterbuf, port->masterbuf + framesize, port->mbsize);
+	
+	spin_unlock(&port->queued_iframes_spinlock); 
+	
+	printk(KERN_INFO "mbsize %d\n", port->mbsize);
+	
+	return finalsize;
+	
+
+}
+
+/* Count is for streaming mode where we need to check there is enough
+   streaming data.
+*/
+unsigned synccom_port_has_incoming_data(struct synccom_port *port)
+{
+	unsigned status = 0;
+	unsigned long flags;
+
+	return_val_if_untrue(port, 0);
+
+	if (synccom_port_is_streaming(port)) {
+		status =  (synccom_frame_is_empty(port->istream)) ? 0 : 1;
+	}
+	else {
+		spin_lock(&port->queued_iframes_spinlock);
+		if (port->mbsize > 0)
+			status = 1;
+		spin_unlock(&port->queued_iframes_spinlock);
+	}
+
+	return status;
+}
+
+
+static void usb_callback(struct urb *urb)
+{
+	struct synccom_port *dev;
+	int transfer_size = 0;
+	size_t payload = 0;
+	int i = 0;
+	int a = 0;
+	int payload_count = 1;
+    unsigned char temp = 0;
+	
+	//printk(KERN_INFO "transfer size = %d", urb->actual_length);
+	dev = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&dev->interface->dev,
+				"%s - nonzero write bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&dev->err_lock);
+		dev->errors = urb->status;
+		spin_unlock(&dev->err_lock);
+    
+		
+		//synccom_port_reset_timer(dev);
+		if(urb->status == -ESHUTDOWN)
+		   return;
+		   
+		synccom_port_cont_read(dev, 0, CCR0_OFFSET);
+		return;
+		
+	}
+	transfer_size = urb->actual_length;
+	if (transfer_size > 512)
+	payload_count = 2;
+	
+	if(transfer_size > 1024)
+	payload_count = 3;
+	
+	if(transfer_size > 1536)
+	payload_count = 4;
+	
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
+
+    for(a = 0; a < payload_count; a++){
+	payload = dev->bulk_in_buffer[0] << 8;
+	payload |= dev->bulk_in_buffer[1];
+	
+
+	
+	
+	if ((dev->mbsize + payload) > 1000000){
+		printk(KERN_INFO "max mem reached!!!");
+		spin_unlock(&dev->istream_spinlock);
+	    spin_unlock(&dev->queued_iframes_spinlock);
+		synccom_port_cont_read(dev, 0, CCR0_OFFSET);
+		return;
+	}
+	
+	for(i = 0; i < (payload + 2); i += 2){ //changed urb->actual_length to payload + 2
+		temp = dev->bulk_in_buffer[i];
+		dev->bulk_in_buffer[i] = dev->bulk_in_buffer[i + 1];
+		dev->bulk_in_buffer[i+1] = temp;
+		
+	}
+	memmove(dev->bulk_in_buffer, dev->bulk_in_buffer + 2, transfer_size - 2);//changed from payload
+	
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer, payload);
+	memmove(dev->bulk_in_buffer, dev->bulk_in_buffer + payload, transfer_size - (payload + 2)); //added
+	
+	transfer_size -= (payload + 2); //added
+
+	dev->mbsize += payload;
+	
+	   
+	
+	
+	
+	}//added
+	//update_bc_buffer(dev);
+	spin_unlock(&dev->istream_spinlock);
+	spin_unlock(&dev->queued_iframes_spinlock);
+	
+	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	wake_up_interruptible(&dev->input_queue);
+	
+	synccom_port_cont_read(dev, 0, CCR0_OFFSET);
+}
+
+static void usb_callback1(struct urb *urb)
+{
+	struct synccom_port *dev;
+	int transfer_size = 0;
+	size_t payload = 0;
+	int i = 0;
+	int a = 0;
+	int payload_count = 1;
+    unsigned char temp = 0;
+	
+	
+	dev = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&dev->interface->dev,
+				"%s - nonzero write bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&dev->err_lock);
+		dev->errors = urb->status;
+		spin_unlock(&dev->err_lock);
+    
+		
+		synccom_port_reset_timer(dev);
+		
+		if(urb->status == -ESHUTDOWN)
+		   return;
+		   
+		synccom_port_cont_read2(dev);
+		return;
+		
+	}
+	transfer_size = urb->actual_length;
+	if (transfer_size > 512)
+	payload_count = 2;
+	
+	if(transfer_size > 1024)
+	payload_count = 3;
+	
+	if(transfer_size > 1536)
+	payload_count = 4;
+	
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
+
+    for(a = 0; a < payload_count; a++){
+	payload = dev->bulk_in_buffer2[0] << 8;
+	payload |= dev->bulk_in_buffer2[1];
+	
+	
+	
+	
+	if ((dev->mbsize + payload) > 1000000){
+		printk(KERN_INFO "max mem reached!!!");
+		spin_unlock(&dev->istream_spinlock);
+	    spin_unlock(&dev->queued_iframes_spinlock);
+		synccom_port_cont_read2(dev);
+		return;
+	}
+	
+	for(i = 0; i < (payload + 2); i += 2){ //changed urb->actual_length to payload + 2
+		temp = dev->bulk_in_buffer2[i];
+		dev->bulk_in_buffer2[i] = dev->bulk_in_buffer2[i + 1];
+		dev->bulk_in_buffer2[i+1] = temp;
+		
+	}
+	memmove(dev->bulk_in_buffer2, dev->bulk_in_buffer2 + 2, transfer_size - 2);//changed from payload
+	
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer2, payload);
+	memmove(dev->bulk_in_buffer2, dev->bulk_in_buffer2 + payload, transfer_size - (payload + 2)); //added
+	
+	transfer_size -= (payload + 2); //added
+
+	dev->mbsize += payload;
+	
+	}//added
+	//update_bc_buffer(dev);
+	spin_unlock(&dev->istream_spinlock);
+	spin_unlock(&dev->queued_iframes_spinlock);
+	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	wake_up_interruptible(&dev->input_queue);
+	
+	synccom_port_cont_read2(dev);
+}
+
+static void usb_callback2(struct urb *urb)
+{
+	struct synccom_port *dev;
+	int transfer_size = 0;
+	size_t payload = 0;
+	int i = 0;
+	int a = 0;
+	int payload_count = 1;
+    unsigned char temp = 0;
+	
+	
+	dev = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&dev->interface->dev,
+				"%s - nonzero write bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&dev->err_lock);
+		dev->errors = urb->status;
+		spin_unlock(&dev->err_lock);
+        
+		
+		
+		if(urb->status == -ESHUTDOWN)
+		   return;
+		   
+		synccom_port_cont_read3(dev);
+		return;
+		
+	}
+	transfer_size = urb->actual_length;
+	if (transfer_size > 512)
+	payload_count = 2;
+	
+	if(transfer_size > 1024)
+	payload_count = 3;
+	
+	if(transfer_size > 1536)
+	payload_count = 4;
+	
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
+
+    for(a = 0; a < payload_count; a++){
+	payload = dev->bulk_in_buffer3[0] << 8;
+	payload |= dev->bulk_in_buffer3[1];
+	
+	
+	if ((dev->mbsize + payload) > 1000000){
+		printk(KERN_INFO "max mem reached!!!");
+		spin_unlock(&dev->istream_spinlock);
+	    spin_unlock(&dev->queued_iframes_spinlock);
+		synccom_port_cont_read3(dev);
+		return;
+	}
+	
+	for(i = 0; i < (payload + 2); i += 2){ //changed urb->actual_length to payload + 2
+		temp = dev->bulk_in_buffer3[i];
+		dev->bulk_in_buffer3[i] = dev->bulk_in_buffer3[i + 1];
+		dev->bulk_in_buffer3[i+1] = temp;
+		
+	}
+	memmove(dev->bulk_in_buffer3, dev->bulk_in_buffer3 + 2, transfer_size - 2);//changed from payload
+	
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer3, payload);
+	memmove(dev->bulk_in_buffer3, dev->bulk_in_buffer3 + payload, transfer_size - (payload + 2)); //added
+	
+	transfer_size -= (payload + 2); //added
+
+	
+	
+	dev->mbsize += payload;
+	
+	   
+	
+	
+	
+	}//added
+	//update_bc_buffer(dev);
+	spin_unlock(&dev->istream_spinlock);
+	spin_unlock(&dev->queued_iframes_spinlock);
+	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	wake_up_interruptible(&dev->input_queue);
+	
+	synccom_port_cont_read3(dev);
+}
+
+
+static void usb_callback3(struct urb *urb)
+{
+	struct synccom_port *dev;
+	int transfer_size = 0;
+	size_t payload = 0;
+	int i = 0;
+	int a = 0;
+	int payload_count = 1;
+    unsigned char temp = 0;
+	
+	dev = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&dev->interface->dev,
+				"%s - nonzero write bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&dev->err_lock);
+		dev->errors = urb->status;
+		spin_unlock(&dev->err_lock);
+        
+		
+		
+		if(urb->status == -ESHUTDOWN)
+		   return;
+		   
+		synccom_port_cont_read4(dev);
+		return;
+		
+	}
+	transfer_size = urb->actual_length;
+
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
+
+    for(a = 0; a < payload_count; a++){
+	payload = dev->bulk_in_buffer4[0] << 8;
+	payload |= dev->bulk_in_buffer4[1];
+	
+	
+	
+	
+	if ((dev->mbsize + payload) > 1000000){
+		printk(KERN_INFO "max mem reached!!!");
+		spin_unlock(&dev->istream_spinlock);
+	    spin_unlock(&dev->queued_iframes_spinlock);
+		synccom_port_cont_read4(dev);
+		return;
+	}
+	
+	for(i = 0; i < (payload + 2); i += 2){ //changed urb->actual_length to payload + 2
+		temp = dev->bulk_in_buffer4[i];
+		dev->bulk_in_buffer4[i] = dev->bulk_in_buffer4[i + 1];
+		dev->bulk_in_buffer4[i+1] = temp;
+		
+	}
+	memmove(dev->bulk_in_buffer4, dev->bulk_in_buffer4 + 2, transfer_size - 2);//changed from payload
+	
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer4, payload);
+	memmove(dev->bulk_in_buffer4, dev->bulk_in_buffer4 + payload, transfer_size - (payload + 2)); //added
+	
+	transfer_size -= (payload + 2); //added
+
+	
+	
+	dev->mbsize += payload;
+	
+	
+	
+	}//added
+	//update_bc_buffer(dev);
+	spin_unlock(&dev->istream_spinlock);
+	spin_unlock(&dev->queued_iframes_spinlock);
+	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	wake_up_interruptible(&dev->input_queue);
+	
+	synccom_port_cont_read4(dev);
+}
+
+/*
+	At the port level the offset will automatically be converted to the port
+	specific offset.
+*/
+__u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
+							 unsigned register_offset)
+{
+	
+	
+	struct urb *urb = NULL;
+	struct synccom_port *dev;
+	dev = port;
+	
+    usb_fill_bulk_urb(dev->bulk_in_urb, dev->udev, usb_rcvbulkpipe(dev->udev,0x82),
+				dev->bulk_in_buffer, 512 , usb_callback, dev);   
+		
+	usb_submit_urb(dev->bulk_in_urb, GFP_ATOMIC);
+	
+	return 0;
+
+}
+
+__u32 synccom_port_cont_read2(struct synccom_port *port)
+							
+{
+	
+	struct urb *urb = NULL;
+	struct synccom_port *dev;
+	dev = port;
+	
+	 usb_fill_bulk_urb(dev->bulk_in_urb2, dev->udev, usb_rcvbulkpipe(dev->udev,0x82),
+				dev->bulk_in_buffer2, 512 , usb_callback1, dev);
+	
+	usb_submit_urb(dev->bulk_in_urb2, GFP_ATOMIC);
+	
+	return 0;
+}
+
+__u32 synccom_port_cont_read3(struct synccom_port *port)
+							
+{
+	
+	struct urb *urb = NULL;
+	struct synccom_port *dev;
+	dev = port;
+	
+	 usb_fill_bulk_urb(dev->bulk_in_urb3, dev->udev, usb_rcvbulkpipe(dev->udev,0x82),
+				dev->bulk_in_buffer3, 512 , usb_callback2, dev);
+	
+	usb_submit_urb(dev->bulk_in_urb3, GFP_ATOMIC);
+	
+	return 0;
+}
+
+__u32 synccom_port_cont_read4(struct synccom_port *port)
+							
+{
+	
+	struct urb *urb = NULL;
+	struct synccom_port *dev;
+	dev = port;
+	
+	
+	 usb_fill_bulk_urb(dev->bulk_in_urb4, dev->udev, usb_rcvbulkpipe(dev->udev,0x82),
+				dev->bulk_in_buffer4, 512 , usb_callback3, dev);
+	
+	usb_submit_urb(dev->bulk_in_urb4, GFP_ATOMIC);
+	
+	
+	return 0;
+}
+/*
+	At the port level the offset will automatically be converted to the port
+	specific offset.
+*/
+
+__u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
+							 unsigned register_offset)
+{
+	
+	
+	unsigned offset;
+	__u32 value = 0;
+	__u32 fvalue = 0;
+    int command = 0x6b;
+	int count;
+	char msg[3];
+	char *buf = NULL;
+	int reg[4];
+	struct urb *urb = NULL;
+	struct synccom_port *dev;
+	dev = port;
+	int retval = 0;
+	size_t writesize = 7;
+	return_val_if_untrue(port, 0);
+	return_val_if_untrue(bar <= 2, 0);
+  
+	offset = port_offset(port, bar, register_offset);
+	
+	
+	msg[0] = command;
+	msg[1] = (offset >> 8) & 0xFF;
+	msg[2] = offset & 0xFF;
+	
+	        usb_bulk_msg(port->udev, 
+	        usb_sndbulkpipe(port->udev, 1), &msg, 
+		    sizeof(msg), &count, HZ*10);
+	
+            usb_bulk_msg(port->udev, 
+	        usb_rcvbulkpipe(port->udev, 1), &value, 
+		    sizeof(reg), &count, HZ*10);	
+		
+			
+    fvalue = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
+		
+	return 0;
+error:
+	
+return fvalue;	
+}
+
+
+int synccom_port_set_register(struct synccom_port *port, unsigned bar,
+						   unsigned register_offset, __u32 value)
+{
+	
+	unsigned offset = 0;
+    int command = 0x6a;
+	char msg[7]; 
+	int count;
+	
+	return_val_if_untrue(port, 0);
+	return_val_if_untrue(bar <= 2, 0);
+
+	offset = port_offset(port, bar, register_offset);
+   
+	/* Checks to make sure there is a clock present. */
+	 if (register_offset == CMDR_OFFSET && port->ignore_timeout == 0
+		&& synccom_port_timed_out(port)) {
+		return -ETIMEDOUT;
+	}
+
+	//construct a message string to send to the synccom
+	msg[0] = command;
+	msg[1] = (offset >> 8) & 0xFF;
+	msg[2] = offset & 0xFF;
+	msg[3] = (value >> 24) & 0xFF;
+    msg[4] = (value >> 16) & 0xFF;
+	msg[5] = (value >> 8) & 0xFF;
+	msg[6] =  value & 0xFF;
+	
+	//send the message to the synccom
+         usb_bulk_msg(port->udev, 
+	     usb_sndbulkpipe(port->udev, 1), &msg, 
+		 sizeof(msg), &count, HZ*10);		    
+	
+	return 1;
+}
+
+/*
+	At the port level the offset will automatically be converted to the port
+	specific offset.
+*/
+void synccom_port_get_register_rep(struct synccom_port *port, unsigned bar,
+								unsigned register_offset, char *buf,
+								unsigned byte_count)
+{
+
+	unsigned offset = 0;
+   
+	return_if_untrue(port);
+	return_if_untrue(bar <= 2);
+	return_if_untrue(buf);
+	return_if_untrue(byte_count > 0);
+	int count;
+   
+	offset = port_offset(port, bar, register_offset);
+
+	     usb_bulk_msg(port->udev, 
+	     usb_rcvbulkpipe(port->udev, 82), buf, 
+		 byte_count, &count, HZ*10);		
+
+}
+
+
+/*
+	At the port level the offset will automatically be converted to the port
+	specific offset.
+*/
+void synccom_port_set_register_rep(struct synccom_port *port, unsigned bar,
+								unsigned register_offset, const char *data,
+								unsigned byte_count)
+{
+	
+	unsigned offset = 0;
+    
+	return_if_untrue(port);
+	return_if_untrue(bar <= 2);
+	return_if_untrue(data);
+	return_if_untrue(byte_count > 0);
+	int count;
+    char msg[7];
+	
+	offset = port_offset(port, bar, register_offset);
+	
+	     usb_bulk_msg(port->udev, 
+	     usb_sndbulkpipe(port->udev, 6), data, 
+		 byte_count, &count, 0);		
+	
+}
+
+void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
+								unsigned register_offset, const char *data,
+								unsigned byte_count)
+{
+	
+	unsigned offset = 0;
+    
+	return_if_untrue(port);
+	return_if_untrue(bar <= 2);
+	return_if_untrue(data);
+	return_if_untrue(byte_count > 0);
+	int count;
+    char msg[7];
+	
+	offset = port_offset(port, bar, register_offset);
+	
+	msg[0] = 0x6a;
+	msg[1] = 0x00;
+	msg[2] = 0x40;
+	msg[3] = data[0];
+    msg[4] = data[1];
+	msg[5] = data[2];
+	msg[6] = data[3];
+	
+	     usb_bulk_msg(port->udev, 
+	     usb_sndbulkpipe(port->udev, 1), &msg, 
+		 7, &count, HZ*10);		
+	
+}
+
+/*
+	At the port level the offset will automatically be converted to the port
+	specific offset.
+*/
+int synccom_port_set_registers(struct synccom_port *port,
+							const struct synccom_registers *regs)
+{
+	unsigned stalled = 0;
+	unsigned i = 0;
+
+	return_val_if_untrue(port, 0);
+	return_val_if_untrue(regs, 0);
+
+	for (i = 0; i < sizeof(*regs) / sizeof(synccom_register); i++) {
+		unsigned register_offset = i * 4;
+
+		if (is_read_only_register(register_offset)
+			|| ((synccom_register *)regs)[i] < 0) {
+			continue;
+			
+		}
+
+		if (register_offset <= MAX_OFFSET) {
+			if (synccom_port_set_register(port, 0, register_offset, ((synccom_register *)regs)[i]) == -ETIMEDOUT)
+				stalled = 1;
+				
+		}
+		else {
+			synccom_port_set_register(port, 2, FCR_OFFSET,
+								   ((synccom_register *)regs)[i]);
+				
+		}
+	}
+
+	return (stalled) ? -ETIMEDOUT : 1;
+}
+
+/*
+  synccom_port_get_registers reads only the registers that are specified with SYNCCOM_UPDATE_VALUE.
+  If the requested register is larger than the maximum FCore register it jumps to the FCR register.
+*/
+void synccom_port_get_registers(struct synccom_port *port, struct synccom_registers *regs)
+{
+	unsigned i = 0;
+
+	return_if_untrue(port);
+	return_if_untrue(regs);
+
+	for (i = 0; i < sizeof(*regs) / sizeof(synccom_register); i++) {
+		if (((synccom_register *)regs)[i] != SYNCCOM_UPDATE_VALUE)
+			continue;
+
+		if (i * 4 <= MAX_OFFSET) {
+			((synccom_register *)regs)[i] = synccom_port_get_register(port, 0, i * 4);
+		}
+		else {
+			((synccom_register *)regs)[i] = synccom_port_get_register(port, 2,FCR_OFFSET);
+		}
+	}
+}
+
+__u32 synccom_port_get_TXCNT(struct synccom_port *port)
+{
+	__u32 fifo_bc_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET);
+
+	return (fifo_bc_value & 0x1FFF0000) >> 16;
+}
+
+unsigned synccom_port_get_RXCNT(struct synccom_port *port)
+{
+	
+	__u32 fifo_bc_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET);
+
+	/* Not sure why, but this can be larger than 8192. We add
+       the 8192 check here so other code can count on the value
+       not being larger than 8192. */
+	return min(fifo_bc_value & 0x00003FFF, (__u32)8192);
+}
+__u8 synccom_port_get_FREV(struct synccom_port *port)
+{
+	__u32 vstr_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+
+	return (__u8)((vstr_value & 0x000000FF));
+}
+
+__u8 synccom_port_get_PREV(struct synccom_port *port)
+{
+	__u32 vstr_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+
+	return (__u8)((vstr_value & 0x0000FF00) >> 8);
+}
+
+__u16 synccom_port_get_PDEV(struct synccom_port *port)
+{
+	__u32 vstr_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+
+	return (__u16)((vstr_value & 0xFFFF0000) >> 16);
+}
+
+unsigned synccom_port_get_CE(struct synccom_port *port)
+{
+	__u32 star_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	star_value = synccom_port_get_register(port, 0, STAR_OFFSET);
+
+	return (unsigned)((star_value & 0x00040000) >> 18);
+}
+
+unsigned synccom_port_get_RFCNT(struct synccom_port *port)
+{
+	
+	__u32 fifo_fc_value = 0;
+
+	return_val_if_untrue(port, 0);
+
+	fifo_fc_value = synccom_port_get_register(port, 0, FIFO_FC_OFFSET);
+
+	return (unsigned)(fifo_fc_value & 0x000003ff);
+}
+
+void synccom_port_suspend(struct synccom_port *port)
+{
+	return_if_untrue(port);
+
+	synccom_port_get_registers(port, &port->register_storage);
+}
+
+void synccom_port_resume(struct synccom_port *port)
+{
+	return_if_untrue(port);
+
+	synccom_port_set_registers(port, &port->register_storage);
+}
+
+int synccom_port_purge_rx(struct synccom_port *port)
+{
+	int error_code = 0;
+	unsigned long board_flags;
+	unsigned long istream_flags;
+	unsigned long queued_flags;
+	unsigned long pending_flags;
+
+	return_val_if_untrue(port, 0);
+
+	dev_dbg(port->device, "purge_rx\n");
+
+	
+
+    spin_lock(&port->queued_iframes_spinlock);
+    spin_lock(&port->istream_spinlock);
+	
+		error_code = synccom_port_execute_RRES(port);
+		memset(port->masterbuf, 0, port->mbsize);
+		port->mbsize = 0;
+		memset(port->bc_buffer, 0, port->running_frame_count);
+		port->running_frame_count = 0;
+		
+	spin_unlock(&port->queued_iframes_spinlock);
+    spin_unlock(&port->istream_spinlock);
+	
+	return 1;
+}
+
+int synccom_port_purge_tx(struct synccom_port *port)
+{
+	int error_code = 0;
+	unsigned long board_flags;
+	unsigned long queued_flags = 0;
+	unsigned long sent_flags = 0;
+	unsigned long pending_flags = 0;
+
+	return_val_if_untrue(port, 0);
+
+	dev_dbg(port->device, "purge_tx\n");
+
+	spin_lock(&port->board_tx_spinlock);
+	error_code = synccom_port_execute_TRES(port);
+	spin_unlock(&port->board_tx_spinlock);
+
+	if (error_code < 0)
+		return error_code;
+
+	spin_lock(&port->queued_oframes_spinlock);
+	synccom_flist_clear(&port->queued_oframes);
+	spin_unlock(&port->queued_oframes_spinlock);
+
+	spin_lock(&port->sent_oframes_spinlock);
+	synccom_flist_clear(&port->sent_oframes);
+	spin_unlock(&port->sent_oframes_spinlock);
+
+	spin_lock(&port->pending_oframe_spinlock);
+	if (port->pending_oframe) {
+		synccom_frame_delete(port->pending_oframe);
+		port->pending_oframe = 0;
+	}
+	spin_unlock(&port->pending_oframe_spinlock);
+
+	wake_up_interruptible(&port->output_queue);
+
+	return 1;
+}
+
+unsigned synccom_port_get_input_memory_usage(struct synccom_port *port)
+{
+	unsigned value = 0;
+	unsigned long pending_flags;
+	unsigned long queued_flags;
+	unsigned long stream_flags;
+
+	return_val_if_untrue(port, 0);
+
+	spin_lock_irqsave(&port->queued_iframes_spinlock, queued_flags);
+	value = port->queued_iframes.estimated_memory_usage;
+	spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
+
+	spin_lock_irqsave(&port->istream_spinlock, stream_flags);
+	value += synccom_frame_get_length(port->istream);
+	spin_unlock_irqrestore(&port->istream_spinlock, stream_flags);
+
+	spin_lock_irqsave(&port->pending_iframe_spinlock, pending_flags);
+	if (port->pending_iframe)
+		value += synccom_frame_get_length(port->pending_iframe);
+	spin_unlock_irqrestore(&port->pending_iframe_spinlock, pending_flags);
+
+	return value;
+}
+
+unsigned synccom_port_get_output_memory_usage(struct synccom_port *port)
+{
+	
+	unsigned value = 0;
+	unsigned long pending_flags;
+	unsigned long queued_flags;
+
+	return_val_if_untrue(port, 0);
+
+	spin_lock_irqsave(&port->queued_oframes_spinlock, queued_flags);
+	value = port->queued_oframes.estimated_memory_usage;
+	spin_unlock_irqrestore(&port->queued_oframes_spinlock, queued_flags);
+
+	spin_lock_irqsave(&port->pending_oframe_spinlock, pending_flags);
+	if (port->pending_oframe)
+		value += synccom_frame_get_length(port->pending_oframe);
+	spin_unlock_irqrestore(&port->pending_oframe_spinlock, pending_flags);
+
+	return value;
+}
+
+unsigned synccom_port_get_input_number_frames(struct synccom_port *port)
+{
+	unsigned value = 0;
+	unsigned long pending_flags;
+	unsigned long queued_flags;
+
+	return_val_if_untrue(port, 0);
+
+	spin_lock_irqsave(&port->queued_iframes_spinlock, queued_flags);
+	value = synccom_flist_length(&port->queued_iframes);
+	spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
+
+	spin_lock_irqsave(&port->pending_iframe_spinlock, pending_flags);
+	if (port->pending_iframe)
+		value++;
+	spin_unlock_irqrestore(&port->pending_iframe_spinlock, pending_flags);
+
+	return value;
+}
+
+unsigned synccom_port_get_output_number_frames(struct synccom_port *port)
+{
+	unsigned value = 0;
+	unsigned long pending_flags;
+	unsigned long queued_flags;
+
+	return_val_if_untrue(port, 0);
+
+	spin_lock_irqsave(&port->queued_oframes_spinlock, queued_flags);
+	value = synccom_flist_length(&port->queued_oframes);
+	spin_unlock_irqrestore(&port->queued_oframes_spinlock, queued_flags);
+
+	spin_lock_irqsave(&port->pending_oframe_spinlock, pending_flags);
+	if (port->pending_oframe)
+		value++;
+	spin_unlock_irqrestore(&port->pending_oframe_spinlock, pending_flags);
+
+	return value;
+}
+
+unsigned synccom_port_get_input_memory_cap(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return port->memory_cap.input;
+}
+
+unsigned synccom_port_get_output_memory_cap(struct synccom_port *port)
+{
+	  
+	return_val_if_untrue(port, 0);
+
+	return port->memory_cap.output;
+}
+
+void synccom_port_set_memory_cap(struct synccom_port *port,
+							  struct synccom_memory_cap *value)
+{
+	return_if_untrue(port);
+	return_if_untrue(value);
+
+	if (value->input >= 0) {
+		if (port->memory_cap.input != value->input) {
+			dev_dbg(port->device, "memory cap (input) %i => %i\n",
+					port->memory_cap.input, value->input);
+		}
+		else {
+			dev_dbg(port->device, "memory cap (input) %i\n",
+					value->input);
+		}
+
+		port->memory_cap.input = value->input;
+	}
+
+	if (value->output >= 0) {
+		if (port->memory_cap.output != value->output) {
+			dev_dbg(port->device, "memory cap (output) %i => %i\n",
+					port->memory_cap.output, value->output);
+		}
+		else {
+			dev_dbg(port->device, "memory cap (output) %i\n",
+					value->output);
+		}
+
+		port->memory_cap.output = value->output;
+	}
+}
+
+#define STRB_BASE 0x00000008
+#define DTA_BASE 0x00000001
+#define CLK_BASE 0x00000002
+
+void synccom_port_set_clock_bits(struct synccom_port *port,
+							  unsigned char *clock_data)
+{
+	
+	__u32 orig_fcr_value = 0;
+	__u32 new_fcr_value = 0;
+	int j = 0; // Must be signed because we are going backwards through the array
+	int i = 0; // Must be signed because we are going backwards through the array
+	unsigned strb_value = STRB_BASE;
+	unsigned dta_value = DTA_BASE;
+	unsigned clk_value = CLK_BASE;
+	unsigned long flags;
+    char buf_data[4];
+	__u32 *data = 0;
+	unsigned data_index = 0;
+
+	return_if_untrue(port);
+
+     clock_data[15] |= 0x04;
+   
+
+
+	data = kmalloc(sizeof(__u32) * 323, GFP_KERNEL);
+
+	if (data == NULL) {
+		printk(KERN_ERR DEVICE_NAME "kmalloc failed\n");
+		return;
+	}
+
+	if (port->channel == 1) {
+		strb_value <<= 0x08;
+		dta_value <<= 0x08;
+		clk_value <<= 0x08;
+	}
+
+	spin_lock_irqsave(&port->board_settings_spinlock, flags);
+
+	orig_fcr_value = synccom_port_get_register(port, 2, FCR_OFFSET);
+
+	data[data_index++] = new_fcr_value = orig_fcr_value & 0xfffff0f0;
+
+	for (i = 19; i >= 0; i--) {
+		for (j = 7; j >= 0; j--) {
+			int bit = ((clock_data[i] >> j) & 1);
+
+            /* This is required for 4-port cards. I'm not sure why at the
+               moment */
+			//data[data_index++] = new_fcr_value;
+
+			if (bit)
+				new_fcr_value |= dta_value; /* Set data bit */
+			else
+				new_fcr_value &= ~dta_value; /* Clear data bit */
+
+			data[data_index++] = new_fcr_value |= clk_value; /* Set clock bit */
+			data[data_index++] = new_fcr_value &= ~clk_value; /* Clear clock bit */
+
+			new_fcr_value = orig_fcr_value & 0xfffff0f0;
+		}
+	}
+
+	new_fcr_value = orig_fcr_value & 0xfffff0f0;
+
+	new_fcr_value |= strb_value; /* Set strobe bit */
+	new_fcr_value &= ~clk_value; /* Clear clock bit	*/
+
+	data[data_index++] = new_fcr_value;
+	data[data_index++] = orig_fcr_value;
+
+for(i = 0; i < 323; i++)
+{
+        buf_data[0] = data[i] >> 24; 
+		buf_data[1] = data[i] >> 16; 
+		buf_data[2] = data[i] >> 8;
+		buf_data[3] = data[i] >> 0;
+	synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data, data_index * 4);
+}
+	spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
+
+	kfree(data);
+}
+
+int synccom_port_set_append_status(struct synccom_port *port, unsigned value)
+{
+	return_val_if_untrue(port, 0);
+
+	if (value && synccom_port_is_streaming(port))
+	    return -EOPNOTSUPP;
+
+    if (port->append_status != value) {
+		dev_dbg(port->device, "append status %i => %i", port->append_status,
+		        value);
+    }
+    else {
+		dev_dbg(port->device, "append status = %i", value);
+    }
+
+	port->append_status = (value) ? 1 : 0;
+
+	return 1;
+}
+
+int synccom_port_set_append_timestamp(struct synccom_port *port, unsigned value)
+{
+	
+	    return -EOPNOTSUPP;
+
+}
+
+void synccom_port_set_ignore_timeout(struct synccom_port *port,
+								  unsigned value)
+{
+	return_if_untrue(port);
+
+    if (port->ignore_timeout != value) {
+		dev_dbg(port->device, "ignore timeout %i => %i",
+		        port->ignore_timeout, value);
+    }
+    else {
+		dev_dbg(port->device, "ignore timeout = %i", value);
+    }
+
+	port->ignore_timeout = (value) ? 1 : 0;
+}
+
+void synccom_port_set_rx_multiple(struct synccom_port *port,
+							   unsigned value)
+{
+	return_if_untrue(port);
+
+    if (port->rx_multiple != value) {
+		dev_dbg(port->device, "receive multiple %i => %i",
+		        port->rx_multiple, value);
+    }
+    else {
+		dev_dbg(port->device, "receive multiple = %i", value);
+    }
+
+	port->rx_multiple = (value) ? 1 : 0;
+}
+
+unsigned synccom_port_get_append_status(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return !synccom_port_is_streaming(port) && port->append_status;
+}
+
+unsigned synccom_port_get_append_timestamp(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return !synccom_port_is_streaming(port) && port->append_timestamp;
+}
+
+unsigned synccom_port_get_ignore_timeout(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return port->ignore_timeout;
+}
+
+unsigned synccom_port_get_rx_multiple(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return port->rx_multiple;
+}
+
+int synccom_port_execute_TRES(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x08000000);
+}
+
+int synccom_port_execute_RRES(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x00020000);
+}
+
+void synccom_port_execute_GO_R(struct synccom_port *port)
+{
+	return_if_untrue(port);
+	return_if_untrue(synccom_port_has_dma(port) == 1);
+
+	synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000001);
+}
+
+void synccom_port_execute_RST_R(struct synccom_port *port)
+{
+	return_if_untrue(port);
+	return_if_untrue(synccom_port_has_dma(port) == 1);
+
+	synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000010);
+}
+
+void synccom_port_execute_RST_T(struct synccom_port *port)
+{
+	return_if_untrue(port);
+	return_if_untrue(synccom_port_has_dma(port) == 1);
+
+	synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000020);
+}
+
+void synccom_port_execute_STOP_R(struct synccom_port *port)
+{
+	return_if_untrue(port);
+	return_if_untrue(synccom_port_has_dma(port) == 1);
+
+	synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000100);
+}
+
+void synccom_port_execute_STOP_T(struct synccom_port *port)
+{
+	return_if_untrue(port);
+	return_if_untrue(synccom_port_has_dma(port) == 1);
+
+	synccom_port_set_register(port, 2, DMACCR_OFFSET, 0x00000200);
+}
+
+unsigned synccom_port_using_async(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	/* We must refresh FCR because it is shared with serialfc */
+	port->register_storage.FCR = synccom_port_get_register(port, 2, FCR_OFFSET);
+
+	
+		return port->register_storage.FCR & 0x01000000;
+
+}
+
+unsigned synccom_port_is_streaming(struct synccom_port *port)
+{
+	unsigned transparent_mode = 0;
+	unsigned xsync_mode = 0;
+	unsigned rlc_mode = 0;
+	unsigned fsc_mode = 0;
+	unsigned ntb = 0;
+
+	return_val_if_untrue(port, 0);
+
+	transparent_mode = ((port->register_storage.CCR0 & 0x3) == 0x2) ? 1 : 0;
+	xsync_mode = ((port->register_storage.CCR0 & 0x3) == 0x1) ? 1 : 0;
+	rlc_mode = (port->register_storage.CCR2 & 0xffff0000) ? 1 : 0;
+	fsc_mode = (port->register_storage.CCR0 & 0x700) ? 1 : 0;
+	ntb = (port->register_storage.CCR0 & 0x70000) >> 16;
+
+	return ((transparent_mode || xsync_mode) && !(rlc_mode || fsc_mode || ntb)) ? 1 : 0;
+}
+
+unsigned synccom_port_has_dma(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	if (force_fifo)
+		return 0;
+
+	return port->card->dma;
+}
+
+#ifdef DEBUG
+unsigned synccom_port_get_interrupt_count(struct synccom_port *port, __u32 isr_bit)
+{
+	return_val_if_untrue(port, 0);
+
+	return debug_interrupt_tracker_get_count(port->interrupt_tracker, isr_bit);
+}
+
+void synccom_port_increment_interrupt_counts(struct synccom_port *port,
+										  __u32 isr_value)
+{
+	return_if_untrue(port);
+
+	debug_interrupt_tracker_increment_all(port->interrupt_tracker, isr_value);
+}
+#endif
+
+/* Returns -EINVAL if you set an incorrect transmit modifier */
+int synccom_port_set_tx_modifiers(struct synccom_port *port, int value)
+{
+	return_val_if_untrue(port, 0);
+
+	switch (value) {
+		case XF:
+		case XF|TXT:
+		case XF|TXEXT:
+		case XREP:
+		case XREP|TXT:
+			if (port->tx_modifiers != value) {
+				dev_dbg(port->device, "transmit modifiers 0x%x => 0x%x\n",
+						port->tx_modifiers, value);
+			}
+			else {
+				dev_dbg(port->device, "transmit modifiers 0x%x\n",
+						value);
+			}
+
+			port->tx_modifiers = value;
+
+			break;
+
+		default:
+			dev_warn(port->device, "tx modifiers (invalid value 0x%x)\n",
+					 value);
+
+			return -EINVAL;
+	}
+
+	return 1;
+}
+
+unsigned synccom_port_get_tx_modifiers(struct synccom_port *port)
+{
+	return_val_if_untrue(port, 0);
+
+	return port->tx_modifiers;
+}
+
+void synccom_port_execute_transmit(struct synccom_port *port, unsigned dma)
+{
+	
+	unsigned command_register = 0;
+	unsigned command_value = 0;
+	unsigned command_bar = 0;
+
+	return_if_untrue(port);
+
+	if (dma) {
+		command_bar = 2;
+		command_register = DMACCR_OFFSET;
+		command_value = 0x00000002;
+
+		if (port->tx_modifiers & XREP)
+			command_value |= 0x40000000;
+
+		if (port->tx_modifiers & TXT)
+			command_value |= 0x10000000;
+
+		if (port->tx_modifiers & TXEXT)
+			command_value |= 0x20000000;
+	}
+	else {
+		command_bar = 0;
+		command_register = CMDR_OFFSET;
+		command_value = 0x01000000;
+
+		if (port->tx_modifiers & XREP)
+			command_value |= 0x02000000;
+
+		if (port->tx_modifiers & TXT)
+			command_value |= 0x10000000;
+
+		if (port->tx_modifiers & TXEXT)
+			command_value |= 0x20000000;
+	}
+
+	synccom_port_set_register(port, command_bar, command_register, command_value);
+}
+
+#define TX_FIFO_SIZE 4096
+
+int prepare_frame_for_dma(struct synccom_port *port, struct synccom_frame *frame,
+                          unsigned *length)
+{
+	struct synccom_frame *last_frame = 0;
+	unsigned long sent_flags = 0;
+
+	synccom_frame_setup_descriptors(frame);
+
+	spin_lock_irqsave(&port->sent_oframes_spinlock, sent_flags);
+
+	last_frame = synccom_flist_peek_back(&port->sent_oframes);
+
+	if (last_frame && last_frame->d1->control != 0x40000000) {
+		// Wait until last frame is finished
+		spin_unlock_irqrestore(&port->sent_oframes_spinlock, sent_flags);
+		//synccom_port_set_register(port, 2, DMA_TX_BASE_OFFSET, frame->d1_handle);
+		return 0;
+	}
+	else {
+		synccom_port_set_register(port, 2, DMA_TX_BASE_OFFSET, frame->d1_handle);
+		*length = synccom_frame_get_length(frame);
+		spin_unlock_irqrestore(&port->sent_oframes_spinlock, sent_flags);
+		return 2;
+	}
+}
+
+int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *frame,
+                           unsigned *length)
+{
+	
+	unsigned current_length = 0;
+	unsigned buffer_size = 0;
+	unsigned fifo_space = 0;
+	unsigned size_in_fifo = 0;
+	unsigned transmit_length = 0;
+
+	current_length = synccom_frame_get_length(frame);
+	
+	
+	buffer_size = synccom_frame_get_buffer_size(frame);
+	if((current_length % 4) != 0 )
+	size_in_fifo = current_length + (4 - current_length % 4);
+	
+	else
+	size_in_fifo = current_length;
+	
+  
+	
+	
+	/* Subtracts 1 so a TDO overflow doesn't happen on the 4096th byte. */
+	fifo_space = TX_FIFO_SIZE - synccom_port_get_TXCNT(port) - 1;
+	fifo_space -= fifo_space % 4;
+
+	/* Determine the maximum amount of data we can send this time around. */
+	transmit_length = (size_in_fifo > fifo_space) ? fifo_space : current_length;
+    
+	//frame->fifo_initialized = 1; what was this for???
+
+	if (transmit_length == 0)
+		return 0;
+		
+	
+
+	synccom_port_set_register_rep(port, 0, FIFO_OFFSET,
+							   frame->buffer,
+							   size_in_fifo);
+
+	synccom_frame_remove_data(frame, NULL, transmit_length);
+
+	*length = transmit_length;
+
+	/* If this is the first time we add data to the FIFO for this frame we
+	   tell the port how much data is in this frame. */
+	 if (current_length == buffer_size)
+		synccom_port_set_register(port, 0, BC_FIFO_L_OFFSET, buffer_size);
+
+	/* We still have more data to send. */
+	if (!synccom_frame_is_empty(frame))
+		return 1;
+
+	return 2;
+}
+
+unsigned synccom_port_transmit_frame(struct synccom_port *port, struct synccom_frame *frame)
+{
+	
+	unsigned transmit_dma = 0;
+	unsigned transmit_length = 0;
+	int result;
+	
+
+		result = prepare_frame_for_fifo(port, frame, &transmit_length);
+
+	if (result)
+		synccom_port_execute_transmit(port, transmit_dma);
+
+	dev_dbg(port->device, "F#%i => %i byte%s%s\n",
+			frame->number, transmit_length,
+			(transmit_length == 1) ? "" : "s",
+			(result != 2) ? " (starting)" : "");
+
+	return result;
+}
+
+void program_synccom(struct synccom_port *port, char *line)
+{
+	
+	 int count;
+	 char msg[50];
+	 int i;
+	 msg[0] = 0x06;
+	 
+	 for(i = 0; line[i] != 13; i++)
+	 {
+		 msg[i+1] = line[i];
+	 }
+	  
+	  usb_bulk_msg(port->udev, 
+	        usb_sndbulkpipe(port->udev, 1), &msg, 
+		    i + 1, &count, HZ*10);
+	
+}

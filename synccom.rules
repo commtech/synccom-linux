@@ -1,0 +1,30 @@
+#The GROUP assignment allows you to define which Unix group should own
+#the device node. Here is an example rule which defines that the users
+#group will own the synccom devices:
+#
+#SUBSYSTEM=="synccom*", GROUP="users"
+#
+#The OWNER key allows you to define which Unix user should have
+#ownership permissions on the device node. Assuming the slightly odd
+#situation where you would want john to own your synccom devices, you\
+#could use:
+#
+#SUBSYSTEM=="synccom*", OWNER="lab"
+#
+#udev defaults to creating nodes with Unix permissions of 0660
+#(read/write to owner and group). If you need to, you can override
+#these defaults on certain devices using rules including the MODE
+#assignment. As an example, the following rule defines that the inotify
+#node shall be readable and writable to everyone:
+#
+#SUBSYSTEM=="synccom*", MODE="0666"
+#
+#Ensures that the device node named synccom0 is created at /dev/synccom/0 but 
+#also creates a symbolic link at /dev/synccom0 as usual.
+#
+#SUBSYSTEM=="synccom*", SYMLINK+="%k"
+#
+#Put the synccom.rules file in the /etc/udev/rules.d directory before loading
+#the driver.
+
+SUBSYSTEM=="synccom*", MODE="0666"
