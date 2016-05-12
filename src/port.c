@@ -133,7 +133,7 @@ int initialize(struct synccom_port *port){
 	setup_timer(&port->timer, &timer_handler, (unsigned long)port);
 	
 	
-	tasklet_init(&port->send_oframe_tasklet, oframe_worker, (unsigned long)port);
+	
 	tasklet_init(&port->clear_oframe_tasklet, clear_oframe_worker, (unsigned long)port);
 	tasklet_init(&port->iframe_tasklet, iframe_worker, (unsigned long)port);
 	tasklet_init(&port->istream_tasklet, istream_worker, (unsigned long)port);
@@ -241,14 +241,9 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
 {
 	
 	struct synccom_frame *frame = 0;
-	unsigned long queued_flags = 0;
-    
-	int a;
 	
 	return_val_if_untrue(port, 0);
-    int count;
-	/* Checks to make sure there is a clock present. */
-	
+    
 	frame = synccom_frame_new(port);
 
 	if (!frame)
@@ -258,12 +253,10 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
    
     port->pending_oframe = frame;
  
-  
 	spin_lock(&port->queued_oframes_spinlock);
 	synccom_flist_add_frame(&port->queued_oframes, frame);
 	spin_unlock(&port->queued_oframes_spinlock);
 
-	
     oframe_worker(port);
 	
 	return 0;
@@ -275,14 +268,14 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
 */
 ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf, size_t buf_length)
 {
-	printk(KERN_INFO "frame read"); 
+
 	
 	struct synccom_frame *frame = 0;
 	unsigned remaining_buf_length = 0;
 	int max_frame_length = 0;
 	unsigned current_frame_length = 0;
 	unsigned out_length = 0;
-	unsigned long queued_flags = 0;
+	
 
 	return_val_if_untrue(port, 0);
 
@@ -344,13 +337,15 @@ ssize_t synccom_port_stream_read(struct synccom_port *port, char *buf,
 	
 	
 	unsigned out_length = 0;
-	unsigned long flags;
+	int length;
+	
+	length = buf_length;
 
 	return_val_if_untrue(port, 0);
 
 	spin_lock(&port->istream_spinlock);
 	
-		out_length = min(buf_length, port->mbsize);
+		out_length = min(length, port->mbsize);
 		copy_to_user(buf, port->masterbuf, out_length);
 		port->mbsize -= out_length;
 		memmove(port->masterbuf, port->masterbuf + out_length, port->mbsize);
@@ -369,7 +364,6 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	
 	int framesize = 0;
 	int finalsize = 0;
-	int framecount = 0;
 	if (synccom_port_is_streaming(port))
 		return synccom_port_stream_read(port, buf, count);
 
@@ -416,7 +410,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 unsigned synccom_port_has_incoming_data(struct synccom_port *port)
 {
 	unsigned status = 0;
-	unsigned long flags;
+	
 
 	return_val_if_untrue(port, 0);
 
@@ -793,7 +787,7 @@ __u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
 {
 	
 	
-	struct urb *urb = NULL;
+	
 	struct synccom_port *dev;
 	dev = port;
 	
@@ -810,7 +804,7 @@ __u32 synccom_port_cont_read2(struct synccom_port *port)
 							
 {
 	
-	struct urb *urb = NULL;
+	
 	struct synccom_port *dev;
 	dev = port;
 	
@@ -826,7 +820,7 @@ __u32 synccom_port_cont_read3(struct synccom_port *port)
 							
 {
 	
-	struct urb *urb = NULL;
+	
 	struct synccom_port *dev;
 	dev = port;
 	
@@ -842,7 +836,7 @@ __u32 synccom_port_cont_read4(struct synccom_port *port)
 							
 {
 	
-	struct urb *urb = NULL;
+	
 	struct synccom_port *dev;
 	dev = port;
 	
@@ -871,13 +865,12 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
     int command = 0x6b;
 	int count;
 	char msg[3];
-	char *buf = NULL;
+	
 	int reg[4];
-	struct urb *urb = NULL;
+	
 	struct synccom_port *dev;
 	dev = port;
-	int retval = 0;
-	size_t writesize = 7;
+	
 	return_val_if_untrue(port, 0);
 	return_val_if_untrue(bar <= 2, 0);
   
@@ -950,12 +943,12 @@ void synccom_port_get_register_rep(struct synccom_port *port, unsigned bar,
 {
 
 	unsigned offset = 0;
-   
+    int count;
 	return_if_untrue(port);
 	return_if_untrue(bar <= 2);
 	return_if_untrue(buf);
 	return_if_untrue(byte_count > 0);
-	int count;
+	
    
 	offset = port_offset(port, bar, register_offset);
 
@@ -971,18 +964,20 @@ void synccom_port_get_register_rep(struct synccom_port *port, unsigned bar,
 	specific offset.
 */
 void synccom_port_set_register_rep(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, const char *data,
+								unsigned register_offset, char *data,
 								unsigned byte_count)
 {
 	
 	unsigned offset = 0;
-    
+    int count;
+	
 	return_if_untrue(port);
 	return_if_untrue(bar <= 2);
 	return_if_untrue(data);
 	return_if_untrue(byte_count > 0);
-	int count;
-    char msg[7];
+	
+	
+  
 	
 	offset = port_offset(port, bar, register_offset);
 	
@@ -993,18 +988,19 @@ void synccom_port_set_register_rep(struct synccom_port *port, unsigned bar,
 }
 
 void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, const char *data,
+								unsigned register_offset, char *data,
 								unsigned byte_count)
 {
 	
 	unsigned offset = 0;
-    
+    int count;
+    char msg[7];
+	
 	return_if_untrue(port);
 	return_if_untrue(bar <= 2);
 	return_if_untrue(data);
 	return_if_untrue(byte_count > 0);
-	int count;
-    char msg[7];
+	
 	
 	offset = port_offset(port, bar, register_offset);
 	
@@ -1181,16 +1177,10 @@ void synccom_port_resume(struct synccom_port *port)
 int synccom_port_purge_rx(struct synccom_port *port)
 {
 	int error_code = 0;
-	unsigned long board_flags;
-	unsigned long istream_flags;
-	unsigned long queued_flags;
-	unsigned long pending_flags;
-
+	
 	return_val_if_untrue(port, 0);
 
 	dev_dbg(port->device, "purge_rx\n");
-
-	
 
     spin_lock(&port->queued_iframes_spinlock);
     spin_lock(&port->istream_spinlock);
@@ -1210,11 +1200,7 @@ int synccom_port_purge_rx(struct synccom_port *port)
 int synccom_port_purge_tx(struct synccom_port *port)
 {
 	int error_code = 0;
-	unsigned long board_flags;
-	unsigned long queued_flags = 0;
-	unsigned long sent_flags = 0;
-	unsigned long pending_flags = 0;
-
+	
 	return_val_if_untrue(port, 0);
 
 	dev_dbg(port->device, "purge_tx\n");
@@ -1396,7 +1382,7 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 	unsigned dta_value = DTA_BASE;
 	unsigned clk_value = CLK_BASE;
 	unsigned long flags;
-    char buf_data[4];
+    char *buf_data;
 	__u32 *data = 0;
 	unsigned data_index = 0;
 
@@ -1405,7 +1391,7 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
      clock_data[15] |= 0x04;
    
 
-
+    buf_data = 0;
 	data = kmalloc(sizeof(__u32) * 323, GFP_KERNEL);
 
 	if (data == NULL) {
@@ -1459,7 +1445,8 @@ for(i = 0; i < 323; i++)
 		buf_data[1] = data[i] >> 16; 
 		buf_data[2] = data[i] >> 8;
 		buf_data[3] = data[i] >> 0;
-	synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data, data_index * 4);
+		
+	synccom_port_set_clock(port, 0, FCR_OFFSET, buf_data, data_index);
 }
 	spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
 

@@ -225,7 +225,7 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 							unsigned register_offset, __u32 value);
 
 void synccom_port_set_register_rep(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, const char *data,
+								unsigned register_offset, char *data,
 								unsigned byte_count);
 
 int synccom_port_purge_tx(struct synccom_port *port);

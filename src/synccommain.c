@@ -257,14 +257,9 @@ static ssize_t synccom_write(struct file *file, const char *buf,
 long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 
-
 	struct synccom_port *port = 0;
-	
 	int error_code = 0;
-	unsigned long flags;
-	int retval = 0;
-    char odata[] = {0x6a, 0x80, 0x38, 0x00, 0x11, 0x20, 0x9c};
-	int count;
+	
 	port = file->private_data;
    
 	switch (cmd) {

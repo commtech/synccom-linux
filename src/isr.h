@@ -24,13 +24,14 @@
 #include <linux/version.h> /* LINUX_VERSION_CODE, KERNEL_VERSION */
 #include <linux/interrupt.h> /* struct pt_regs */
 #include <linux/usb.h>
+#include "port.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
 irqreturn_t synccom_isr(int irq, void *dev_id);
 #else
 irqreturn_t synccom_isr(int irq, void *dev_id, struct pt_regs *regs);
 #endif
 
-void oframe_worker(unsigned long data);
+void oframe_worker(struct synccom_port *port);
 void clear_oframe_worker(unsigned long data);
 void iframe_worker(unsigned long data);
 void istream_worker(unsigned long data);

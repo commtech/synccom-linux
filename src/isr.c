@@ -27,56 +27,6 @@
 #define TX_FIFO_SIZE 4096
 #define MAX_LEFTOVER_BYTES 3
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
-irqreturn_t synccom_isr(int irq, void *potential_port)
-#else
-irqreturn_t synccom_isr(int irq, void *potential_port, struct pt_regs *regs)
-#endif
-{
-	struct synccom_port *port = 0;
-	unsigned isr_value = 0;
-	unsigned streaming = 0;
-
-	if (!port_exists(potential_port))
-		return IRQ_NONE;
-
-	port = (struct synccom_port *)potential_port;
-
-	isr_value = synccom_port_get_register(port, 0, ISR_OFFSET);
-
-	if (!isr_value)
-		return IRQ_NONE;
-
-	if (timer_pending(&port->timer))
-		del_timer(&port->timer);
-
-	port->last_isr_value |= isr_value;
-	streaming = synccom_port_is_streaming(port);
-
-	if (streaming) {
-		if (isr_value & (RFT | RFS))
-			tasklet_schedule(&port->istream_tasklet);
-	}
-	else {
-		if (isr_value & (RFE | RFT | RFS))
-			tasklet_schedule(&port->iframe_tasklet);
-	}
-
-	if (isr_value & TFT)
-		tasklet_schedule(&port->send_oframe_tasklet);
-
-	if (isr_value & ALLS)
-		tasklet_schedule(&port->clear_oframe_tasklet);
-
-#ifdef DEBUG
-	tasklet_schedule(&port->print_tasklet);
-	synccom_port_increment_interrupt_counts(port, isr_value);
-#endif
-
-	synccom_port_reset_timer(port);
-
-	return IRQ_HANDLED;
-}
 
 void iframe_worker(unsigned long data)
 {
@@ -85,9 +35,7 @@ void iframe_worker(unsigned long data)
 	struct synccom_port *port = 0;
 	int receive_length = 0; /* Needs to be signed */
 	unsigned finished_frame = 0;
-	unsigned long board_flags = 0;
-	unsigned long frame_flags = 0;
-	unsigned long queued_flags = 0;
+	
 	static int rejected_last_frame = 0;
 	unsigned current_memory = 0;
 	unsigned memory_cap = 0;
@@ -334,20 +282,10 @@ void clear_oframe_worker(unsigned long data)
 	spin_unlock_irqrestore(&port->sent_oframes_spinlock, sent_flags);
 }
 
-void oframe_worker(unsigned long data)
+void oframe_worker(struct synccom_port *port)
 {
 	
-	struct synccom_port *port = 0;
-	struct synccom_frame *frame = 0;
-	
 	int result;
-
-	unsigned long board_flags = 0;
-	unsigned long frame_flags = 0;
-	unsigned long sent_flags = 0;
-	unsigned long queued_flags = 0;
-
-   port = data;
 
 	return_if_untrue(port);
 
@@ -397,10 +335,4 @@ void timer_handler(unsigned long data)
 	synccom_port_cont_read3(port);
 	synccom_port_cont_read4(port);
 	
-}
-
-void urb_int(struct synccom_port *port)
-{
-	
-	return 0;
 }
