@@ -243,16 +243,12 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
 	struct synccom_frame *frame = 0;
 	unsigned long queued_flags = 0;
     
-	
 	int a;
-	
-	
 	
 	return_val_if_untrue(port, 0);
     int count;
 	/* Checks to make sure there is a clock present. */
 	
-
 	frame = synccom_frame_new(port);
 
 	if (!frame)
@@ -260,11 +256,9 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
 
 	synccom_frame_add_data_from_user(frame, data, length);
    
-   port->pending_oframe = frame;
+    port->pending_oframe = frame;
  
   
-
-	
 	spin_lock(&port->queued_oframes_spinlock);
 	synccom_flist_add_frame(&port->queued_oframes, frame);
 	spin_unlock(&port->queued_oframes_spinlock);
@@ -372,23 +366,21 @@ ssize_t synccom_port_stream_read(struct synccom_port *port, char *buf,
 */
 ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 {
-	printk(KERN_INFO "port read"); 
+	
 	int framesize = 0;
 	int finalsize = 0;
 	int framecount = 0;
 	if (synccom_port_is_streaming(port))
 		return synccom_port_stream_read(port, buf, count);
-	else
-	
-	
-	
+
 
 		
-    update_bc_buffer(port);
+    //update_bc_buffer(port);
 		
     framesize = port->bc_buffer[0];
 	
 	//make sure frames of data are available
+	
 	if((framesize > port->mbsize) || (framesize < 1) || (port->running_frame_count < 1))
 	  return 0;
 	  
@@ -906,9 +898,6 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 		
 			
     fvalue = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
-		
-	return 0;
-error:
 	
 return fvalue;	
 }

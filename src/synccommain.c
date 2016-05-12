@@ -168,7 +168,7 @@ static int synccom_flush(struct file *file, fl_owner_t id)
 static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 			 loff_t *ppos)
 {
-	printk(KERN_INFO "read"); 
+	
 	struct synccom_port *port = 0;
 	ssize_t read_count;
 
@@ -179,10 +179,14 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 
 	if (down_interruptible(&port->read_semaphore))
 		return -ERESTARTSYS;
+		
+    
 
-	while (!synccom_port_has_incoming_data(port)) {
+	while ((!synccom_port_has_incoming_data(port)) || (port->bc_buffer[0] > port->mbsize) || (port->running_frame_count < 1)) {
 		up(&port->read_semaphore);
-
+         
+		update_bc_buffer(port);
+		
 		if (file->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
