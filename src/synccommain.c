@@ -384,7 +384,7 @@ static const struct file_operations synccom_fops = {
 	.open =		synccom_open,
 	.release =	synccom_release,
 	.flush =	synccom_flush,
-	.llseek =	noop_llseek,
+	//.llseek =	noop_llseek,
 	.unlocked_ioctl = synccom_ioctl,
         
 };
@@ -435,8 +435,8 @@ static int synccom_probe(struct usb_interface *interface,
 		if (!port->bulk_in_endpointAddr &&
 		    usb_endpoint_is_bulk_in(endpoint)) {
 			/* we found a bulk in endpoint */
-			buffer_size = usb_endpoint_maxp(endpoint);
-			port->bulk_in_size = buffer_size;
+			buffer_size = endpoint->wMaxPacketSize;
+						port->bulk_in_size = buffer_size;
 			port->bulk_in_endpointAddr = endpoint->bEndpointAddress;
 			port->bulk_in_buffer = kmalloc(buffer_size, GFP_KERNEL);
 			if (!port->bulk_in_buffer) {

@@ -378,9 +378,9 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	if((framesize > port->mbsize) || (framesize < 1) || (port->running_frame_count < 1))
 	  return 0;
 	  
-	printk(KERN_INFO "framesize = %d", framesize);
+	
 	port->running_frame_count -= 1;
-	printk(KERN_INFO "running count = %d", port->running_frame_count);
+	
 	memmove(port->bc_buffer, port->bc_buffer + 1, port->running_frame_count * 8);
 	
 	
@@ -389,7 +389,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	finalsize -= (!port->append_status) ? 2 : 0;
 		  
 	spin_lock(&port->queued_iframes_spinlock);
-	printk(KERN_INFO "mbsize %d\n", port->mbsize);
+	
 		copy_to_user(buf, port->masterbuf, finalsize);
 		port->mbsize -= (framesize);
 		   
@@ -397,7 +397,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	
 	spin_unlock(&port->queued_iframes_spinlock); 
 	
-	printk(KERN_INFO "mbsize %d\n", port->mbsize);
+	
 	
 	return finalsize;
 	
@@ -513,7 +513,7 @@ static void usb_callback(struct urb *urb)
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
 	
-	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	
 	wake_up_interruptible(&dev->input_queue);
 	
 	synccom_port_cont_read(dev, 0, CCR0_OFFSET);
@@ -600,7 +600,7 @@ static void usb_callback1(struct urb *urb)
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
-	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	
 	wake_up_interruptible(&dev->input_queue);
 	
 	synccom_port_cont_read2(dev);
@@ -690,7 +690,7 @@ static void usb_callback2(struct urb *urb)
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
-	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	
 	wake_up_interruptible(&dev->input_queue);
 	
 	synccom_port_cont_read3(dev);
@@ -1382,7 +1382,7 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 	unsigned dta_value = DTA_BASE;
 	unsigned clk_value = CLK_BASE;
 	unsigned long flags;
-    char *buf_data;
+    char buf_data[4];
 	__u32 *data = 0;
 	unsigned data_index = 0;
 
@@ -1391,7 +1391,7 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
      clock_data[15] |= 0x04;
    
 
-    buf_data = 0;
+   
 	data = kmalloc(sizeof(__u32) * 323, GFP_KERNEL);
 
 	if (data == NULL) {
@@ -1446,7 +1446,7 @@ for(i = 0; i < 323; i++)
 		buf_data[2] = data[i] >> 8;
 		buf_data[3] = data[i] >> 0;
 		
-	synccom_port_set_clock(port, 0, FCR_OFFSET, buf_data, data_index);
+	synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data[0], data_index);
 }
 	spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
 

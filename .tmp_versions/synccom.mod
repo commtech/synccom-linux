@@ -1,0 +1,2 @@
+/home/landon/Desktop/synccom-linux/synccom.ko
+/home/landon/Desktop/synccom-linux/src/synccommain.o /home/landon/Desktop/synccom-linux/src/port.o /home/landon/Desktop/synccom-linux/src/card.o /home/landon/Desktop/synccom-linux/src/isr.o /home/landon/Desktop/synccom-linux/src/utils.o /home/landon/Desktop/synccom-linux/src/frame.o /home/landon/Desktop/synccom-linux/src/sysfs.o /home/landon/Desktop/synccom-linux/src/descriptor.o /home/landon/Desktop/synccom-linux/src/debug.o /home/landon/Desktop/synccom-linux/src/flist.o
