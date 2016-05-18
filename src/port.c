@@ -772,7 +772,7 @@ static void usb_callback3(struct urb *urb)
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
-	printk(KERN_INFO "mbsize %d\n", dev->mbsize);
+	//printk(KERN_INFO "mbsize %d\n", dev->mbsize);
 	wake_up_interruptible(&dev->input_queue);
 	
 	synccom_port_cont_read4(dev);
@@ -1211,7 +1211,7 @@ int synccom_port_purge_tx(struct synccom_port *port)
 
 	if (error_code < 0)
 		return error_code;
-
+/*
 	spin_lock(&port->queued_oframes_spinlock);
 	synccom_flist_clear(&port->queued_oframes);
 	spin_unlock(&port->queued_oframes_spinlock);
@@ -1226,7 +1226,7 @@ int synccom_port_purge_tx(struct synccom_port *port)
 		port->pending_oframe = 0;
 	}
 	spin_unlock(&port->pending_oframe_spinlock);
-
+*/
 	wake_up_interruptible(&port->output_queue);
 
 	return 1;
