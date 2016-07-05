@@ -5,11 +5,11 @@
 int main(void)
 {
     int fd = 0;
-    struct SYNCCOM_registers regs;
+    struct synccom_registers regs;
 
     fd = open("/dev/SYNCCOM0", O_RDWR);
 
-  //  SYNCCOM_REGISTERS_INIT(regs);
+    SYNCCOM_REGISTERS_INIT(regs);
 
     /* Change the CCR0 and BGR elements to our desired values */
     regs.CCR0 = 0x0011201c;

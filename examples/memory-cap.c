@@ -5,7 +5,7 @@
 int main(void)
 {
     int fd = 0;
-    struct SYNCCOM_memory_cap memcap;
+    struct synccom_memory_cap memcap;
 
     fd = open("/dev/SYNCCOM0", O_RDWR);
 

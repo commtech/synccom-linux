@@ -23,6 +23,7 @@
 
 #include <linux/sched.h> /* wait_queue_head_t */
 #include <linux/fs.h> /* struct indode on <= 2.6.19 */
+#include <string.h>
 
 #define SYNCCOM_REGISTERS_INIT(registers) memset(&registers, -1, sizeof(registers))
 #define SYNCCOM_MEMORY_CAP_INIT(memory_cap) memset(&memory_cap, -1, sizeof(memory_cap))
