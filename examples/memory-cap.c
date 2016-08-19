@@ -7,7 +7,7 @@ int main(void)
     int fd = 0;
     struct synccom_memory_cap memcap;
 
-    fd = open("/dev/SYNCCOM0", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     memcap.input = 1000000; /* 1 MB */
     memcap.output = 1000000; /* 1 MB */

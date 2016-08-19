@@ -7,7 +7,7 @@ int main(void)
     int fd = 0;
     unsigned modifiers;
 
-    fd = open("/dev/synccom", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     ioctl(fd, SYNCCOM_GET_TX_MODIFIERS, &modifiers);
 

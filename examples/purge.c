@@ -6,7 +6,7 @@ int main(void)
 {
     int fd = 0;
 
-    fd = open("/dev/SYNCCOM0", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     ioctl(fd, SYNCCOM_PURGE_TX);
     ioctl(fd, SYNCCOM_PURGE_RX);

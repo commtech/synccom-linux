@@ -7,7 +7,7 @@ int main(void)
     int fd = 0;
     unsigned status = 0;
 
-    fd = open("/dev/SYNCCOM0", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     ioctl(fd, SYNCCOM_GET_IGNORE_TIMEOUT, &status);
 

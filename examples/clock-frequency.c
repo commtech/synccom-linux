@@ -8,7 +8,7 @@ int main(void)
     int fd = 0;
     unsigned char clock_bits[20];
 
-    fd = open("/dev/SYNCCOM0", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     /* 18.432 MHz */
     calculate_clock_bits(18432000, 10, clock_bits);

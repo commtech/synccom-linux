@@ -7,7 +7,7 @@ int main(void)
     int fd = 0;
     struct synccom_registers regs;
 
-    fd = open("/dev/SYNCCOM0", O_RDWR);
+    fd = open("/dev/synccom0", O_RDWR);
 
     SYNCCOM_REGISTERS_INIT(regs);
 
