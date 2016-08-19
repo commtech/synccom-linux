@@ -387,7 +387,7 @@ void update_bc_buffer(struct synccom_port *dev)
 	while(i < frame_count){
 		byte_count = get_frame_size(port);
 	  	
-		memcpy((port->bc_buffer + j + i), &byte_count, 1);
+		memcpy((port->bc_buffer + j + i), &byte_count, 4);
 		i++;
 	  }	
    
