@@ -462,25 +462,11 @@ static void usb_callback(struct urb *urb)
 		
 	}
 	transfer_size = urb->actual_length;
-	if (transfer_size > 512)
-	payload_count = 2;
 	
-	if(transfer_size > 1024)
-	payload_count = 3;
-	
-	if(transfer_size > 1536)
-	payload_count = 4;
-	
-	spin_lock(&dev->queued_iframes_spinlock);
-	spin_lock(&dev->istream_spinlock);
-
-    for(a = 0; a < payload_count; a++){
 	payload = dev->bulk_in_buffer[0] << 8;
 	payload |= dev->bulk_in_buffer[1];
 	
 
-	
-	
 	if ((dev->mbsize + payload) > 1000000){
 		printk(KERN_INFO "max mem reached!!!");
 		spin_unlock(&dev->istream_spinlock);
@@ -495,20 +481,15 @@ static void usb_callback(struct urb *urb)
 		dev->bulk_in_buffer[i+1] = temp;
 		
 	}
-	memmove(dev->bulk_in_buffer, dev->bulk_in_buffer + 2, transfer_size - 2);//changed from payload
+	//memmove(dev->bulk_in_buffer, dev->bulk_in_buffer + 2, payload);//changed from payload
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
 	
-	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer, payload);
-	memmove(dev->bulk_in_buffer, dev->bulk_in_buffer + payload, transfer_size - (payload + 2)); //added
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer + 2, payload);
 	
-	transfer_size -= (payload + 2); //added
-
 	dev->mbsize += payload;
 	
-	   
 	
-	
-	
-	}//added
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
@@ -554,23 +535,11 @@ static void usb_callback1(struct urb *urb)
 		
 	}
 	transfer_size = urb->actual_length;
-	if (transfer_size > 512)
-	payload_count = 2;
 	
-	if(transfer_size > 1024)
-	payload_count = 3;
 	
-	if(transfer_size > 1536)
-	payload_count = 4;
-	
-	spin_lock(&dev->queued_iframes_spinlock);
-	spin_lock(&dev->istream_spinlock);
 
-    for(a = 0; a < payload_count; a++){
 	payload = dev->bulk_in_buffer2[0] << 8;
 	payload |= dev->bulk_in_buffer2[1];
-	
-	
 	
 	
 	if ((dev->mbsize + payload) > 1000000){
@@ -587,16 +556,14 @@ static void usb_callback1(struct urb *urb)
 		dev->bulk_in_buffer2[i+1] = temp;
 		
 	}
-	memmove(dev->bulk_in_buffer2, dev->bulk_in_buffer2 + 2, transfer_size - 2);//changed from payload
+	//memmove(dev->bulk_in_buffer2, dev->bulk_in_buffer2 + 2, payload);
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
 	
-	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer2, payload);
-	memmove(dev->bulk_in_buffer2, dev->bulk_in_buffer2 + payload, transfer_size - (payload + 2)); //added
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer2 + 2, payload);
 	
-	transfer_size -= (payload + 2); //added
-
 	dev->mbsize += payload;
 	
-	}//added
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
@@ -640,19 +607,8 @@ static void usb_callback2(struct urb *urb)
 		
 	}
 	transfer_size = urb->actual_length;
-	if (transfer_size > 512)
-	payload_count = 2;
 	
-	if(transfer_size > 1024)
-	payload_count = 3;
 	
-	if(transfer_size > 1536)
-	payload_count = 4;
-	
-	spin_lock(&dev->queued_iframes_spinlock);
-	spin_lock(&dev->istream_spinlock);
-
-    for(a = 0; a < payload_count; a++){
 	payload = dev->bulk_in_buffer3[0] << 8;
 	payload |= dev->bulk_in_buffer3[1];
 	
@@ -671,22 +627,15 @@ static void usb_callback2(struct urb *urb)
 		dev->bulk_in_buffer3[i+1] = temp;
 		
 	}
-	memmove(dev->bulk_in_buffer3, dev->bulk_in_buffer3 + 2, transfer_size - 2);//changed from payload
+	//memmove(dev->bulk_in_buffer3, dev->bulk_in_buffer3 + 2, transfer_size - 2);//changed from payload
 	
-	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer3, payload);
-	memmove(dev->bulk_in_buffer3, dev->bulk_in_buffer3 + payload, transfer_size - (payload + 2)); //added
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
 	
-	transfer_size -= (payload + 2); //added
-
-	
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer3 + 2, payload);
 	
 	dev->mbsize += payload;
-	
-	   
-	
-	
-	
-	}//added
+
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
@@ -730,15 +679,9 @@ static void usb_callback3(struct urb *urb)
 		
 	}
 	transfer_size = urb->actual_length;
-
-	spin_lock(&dev->queued_iframes_spinlock);
-	spin_lock(&dev->istream_spinlock);
-
-    for(a = 0; a < payload_count; a++){
+   
 	payload = dev->bulk_in_buffer4[0] << 8;
 	payload |= dev->bulk_in_buffer4[1];
-	
-	
 	
 	
 	if ((dev->mbsize + payload) > 1000000){
@@ -755,20 +698,15 @@ static void usb_callback3(struct urb *urb)
 		dev->bulk_in_buffer4[i+1] = temp;
 		
 	}
-	memmove(dev->bulk_in_buffer4, dev->bulk_in_buffer4 + 2, transfer_size - 2);//changed from payload
+	//memmove(dev->bulk_in_buffer4, dev->bulk_in_buffer4 + 2, transfer_size - 2);//changed from payload
 	
-	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer4, payload);
-	memmove(dev->bulk_in_buffer4, dev->bulk_in_buffer4 + payload, transfer_size - (payload + 2)); //added
+	spin_lock(&dev->queued_iframes_spinlock);
+	spin_lock(&dev->istream_spinlock);
 	
-	transfer_size -= (payload + 2); //added
+	memcpy(dev->masterbuf + dev->mbsize, dev->bulk_in_buffer4 + 2, payload);
 
-	
-	
 	dev->mbsize += payload;
 	
-	
-	
-	}//added
 	//update_bc_buffer(dev);
 	spin_unlock(&dev->istream_spinlock);
 	spin_unlock(&dev->queued_iframes_spinlock);
@@ -1177,7 +1115,6 @@ void synccom_port_resume(struct synccom_port *port)
 int synccom_port_purge_rx(struct synccom_port *port)
 {
 	int error_code = 0;
-	
 	return_val_if_untrue(port, 0);
 
 	dev_dbg(port->device, "purge_rx\n");
@@ -1550,7 +1487,7 @@ int synccom_port_execute_TRES(struct synccom_port *port)
 int synccom_port_execute_RRES(struct synccom_port *port)
 {
 	return_val_if_untrue(port, 0);
-
+	
 	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x00020000);
 }
 
