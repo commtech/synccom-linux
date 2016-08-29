@@ -825,7 +825,7 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	
             usb_bulk_msg(port->udev, 
 	        usb_rcvbulkpipe(port->udev, 1), &value, 
-		    sizeof(reg), &count, HZ*10);	
+		    sizeof(value), &count, HZ*10);	
 		
 			
     fvalue = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
