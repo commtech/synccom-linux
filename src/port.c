@@ -251,13 +251,9 @@ int synccom_port_write(struct synccom_port *port, const char *data, unsigned len
 
 	synccom_frame_add_data_from_user(frame, data, length);
    
-    port->pending_oframe = frame;
- 
-	spin_lock(&port->queued_oframes_spinlock);
-	synccom_flist_add_frame(&port->queued_oframes, frame);
-	spin_unlock(&port->queued_oframes_spinlock);
-
-    oframe_worker(port);
+    synccom_port_transmit_frame(port, frame);
+	
+	synccom_frame_delete(frame);
 	
 	return 0;
 }
@@ -434,8 +430,7 @@ static void usb_callback(struct urb *urb)
 	int transfer_size = 0;
 	size_t payload = 0;
 	int i = 0;
-	int a = 0;
-	int payload_count = 1;
+	
     unsigned char temp = 0;
 	
 	//printk(KERN_INFO "transfer size = %d", urb->actual_length);
@@ -506,8 +501,6 @@ static void usb_callback1(struct urb *urb)
 	int transfer_size = 0;
 	size_t payload = 0;
 	int i = 0;
-	int a = 0;
-	int payload_count = 1;
     unsigned char temp = 0;
 	
 	
@@ -579,8 +572,6 @@ static void usb_callback2(struct urb *urb)
 	int transfer_size = 0;
 	size_t payload = 0;
 	int i = 0;
-	int a = 0;
-	int payload_count = 1;
     unsigned char temp = 0;
 	
 	
@@ -652,8 +643,6 @@ static void usb_callback3(struct urb *urb)
 	int transfer_size = 0;
 	size_t payload = 0;
 	int i = 0;
-	int a = 0;
-	int payload_count = 1;
     unsigned char temp = 0;
 	
 	dev = urb->context;
@@ -804,7 +793,7 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	int count;
 	char msg[3];
 	
-	int reg[4];
+	
 	
 	struct synccom_port *dev;
 	dev = port;
