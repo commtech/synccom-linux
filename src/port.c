@@ -362,16 +362,18 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	int finalsize = 0;
 	if (synccom_port_is_streaming(port))
 		return synccom_port_stream_read(port, buf, count);
-
-
 		
+				
     //update_bc_buffer(port);
 		
     framesize = port->bc_buffer[0];
 	
+	finalsize = framesize;
+	finalsize -= (!port->append_status) ? 2 : 0;
+	
 	//make sure frames of data are available
 	
-	if((framesize > port->mbsize) || (framesize < 1) || (port->running_frame_count < 1))
+	if((framesize > port->mbsize) || (framesize < 1) || (port->running_frame_count < 1) || (count < finalsize))
 	  return 0;
 	  
 	
@@ -381,8 +383,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	
 	
 	//remove or keep status bytes
-	finalsize = framesize;
-	finalsize -= (!port->append_status) ? 2 : 0;
+	
 		  
 	spin_lock(&port->queued_iframes_spinlock);
 	
@@ -1697,9 +1698,11 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 	unsigned fifo_space = 0;
 	unsigned size_in_fifo = 0;
 	unsigned transmit_length = 0;
+	unsigned data_transmit_length = 0;
 
 	current_length = synccom_frame_get_length(frame);
 	
+	printk("current_length %d\n", current_length);
 	
 	buffer_size = synccom_frame_get_buffer_size(frame);
 	if((current_length % 4) != 0 )
@@ -1708,7 +1711,7 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 	else
 	size_in_fifo = current_length;
 	
-  
+	printk("SIF %d\n", size_in_fifo);
 	
 	
 	/* Subtracts 1 so a TDO overflow doesn't happen on the 4096th byte. */
@@ -1716,21 +1719,25 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 	fifo_space -= fifo_space % 4;
 
 	/* Determine the maximum amount of data we can send this time around. */
-	transmit_length = (size_in_fifo > fifo_space) ? fifo_space : current_length;
+	data_transmit_length = (size_in_fifo > fifo_space) ? fifo_space : current_length;
+	transmit_length = (size_in_fifo > fifo_space) ? fifo_space : size_in_fifo;
+	
     
+	printk("TL %d\n", transmit_length);
+	printk("DTL %d\n", data_transmit_length);
 	//frame->fifo_initialized = 1; what was this for???
 
 	if (transmit_length == 0)
 		return 0;
 		
-	
-
+		
 	synccom_port_set_register_rep(port, 0, FIFO_OFFSET,
 							   frame->buffer,
-							   size_in_fifo);
+							   transmit_length);
 
-	synccom_frame_remove_data(frame, NULL, transmit_length);
+	synccom_frame_remove_data(frame, NULL, data_transmit_length);
 
+	printk("updated size %d\n", synccom_frame_get_length(frame));
 	*length = transmit_length;
 
 	/* If this is the first time we add data to the FIFO for this frame we
@@ -1754,10 +1761,14 @@ unsigned synccom_port_transmit_frame(struct synccom_port *port, struct synccom_f
 	
 
 		result = prepare_frame_for_fifo(port, frame, &transmit_length);
-
+	printk("result %d\n", result);
 	if (result)
 		synccom_port_execute_transmit(port, transmit_dma);
 
+	while(result == 1){
+		result = prepare_frame_for_fifo(port, frame, &transmit_length);
+		printk("result %d\n", result);
+	}
 	dev_dbg(port->device, "F#%i => %i byte%s%s\n",
 			frame->number, transmit_length,
 			(transmit_length == 1) ? "" : "s",
