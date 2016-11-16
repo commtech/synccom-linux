@@ -26,8 +26,6 @@
 #include <linux/uaccess.h>
 #include <linux/usb.h>
 #include <linux/mutex.h>
-//#include "port.h" /*struct synccom_port*/
-#include "card.h"
 #include "port.h"
 #include "config.h"
 #include "utils.h"
@@ -70,13 +68,14 @@ static void synccom_delete(struct kref *kref)
 	usb_free_urb(port->bulk_in_urb2);
 	usb_free_urb(port->bulk_in_urb3);
 	usb_free_urb(port->bulk_in_urb4);
-	usb_free_urb(port->bulk_out_urb);
+	
+	
 	usb_put_dev(port->udev);
+
 	kfree(port->bulk_in_buffer);
 	kfree(port->bulk_in_buffer2);
 	kfree(port->bulk_in_buffer3);
 	kfree(port->bulk_in_buffer4);
-	kfree(port->bulk_out_buffer);
 	kfree(port);
 }
 
@@ -185,8 +184,6 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 	while ((!synccom_port_has_incoming_data(port)) || (port->bc_buffer[0] > port->mbsize) || (port->running_frame_count < 1)) {
 		up(&port->read_semaphore);
          
-		update_bc_buffer(port);
-		
 		if (file->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
@@ -212,8 +209,7 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 static ssize_t synccom_write(struct file *file, const char *buf,
 			  size_t count, loff_t *ppos)
 {
-     
-	
+    
 	struct synccom_port *port = 0;
 	int error_code = 0;
  
@@ -264,7 +260,10 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
    
 	switch (cmd) {
 	case TEST:
-	 	update_bc_buffer(port);
+	 	//update_bc_buffer(port);
+		 printk("actual %p\n", port);
+		 schedule_work(&port->bclist_worker);
+		// syncom_update_frames(port);
 		 break;
 		
 	case SYNCCOM_GET_REGISTERS:

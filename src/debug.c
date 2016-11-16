@@ -82,8 +82,7 @@ void debug_interrupt_display(unsigned long data)
 
 	port = (struct synccom_port *)data;
 
-	if (!port_exists(port))
-		return;
+	
 
 	isr_value = port->last_isr_value;
 	port->last_isr_value = 0;

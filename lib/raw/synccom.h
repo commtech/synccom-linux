@@ -80,6 +80,7 @@ struct synccom_memory_cap {
 
 
 #define SYNCCOM_IOCTL_MAGIC 0x18
+#define TEST _IO(SYNCCOM_IOCTL_MAGIC, 22)
 #define SYNCCOM_REPROGRAM _IOW(SYNCCOM_IOCTL_MAGIC, 23, char *)
 #define SYNCCOM_GET_REGISTERS _IOR(SYNCCOM_IOCTL_MAGIC, 0, struct synccom_registers *)
 #define SYNCCOM_SET_REGISTERS _IOW(SYNCCOM_IOCTL_MAGIC, 1, const struct synccom_registers *)
