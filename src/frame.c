@@ -266,6 +266,7 @@ int get_frame_count(struct synccom_port *port)
 	msg[1] = 0x80;
 	msg[2] = 0x20;
 	
+	mutex_lock(&port->register_access_mutex);
 	 usb_bulk_msg(port->udev, 
 	 usb_sndbulkpipe(port->udev, 1), &msg, 
      sizeof(msg), &count, HZ*10);
@@ -273,6 +274,7 @@ int get_frame_count(struct synccom_port *port)
      usb_bulk_msg(port->udev, 
 	 usb_rcvbulkpipe(port->udev, 1), &value, 
      4, &count, HZ*10);	
+	 mutex_unlock(&port->register_access_mutex);
 	frame_count = ((value>>24)&0xff) | ((value<<8)&0x000000) | ((value>>8)&0xff00) | ((value<<24)&0x00000000);
 	
 	return frame_count;	
@@ -290,9 +292,10 @@ void update_bc_buffer(struct synccom_port *dev)
 	
 	mutex_lock(&port->running_bc_mutex);
 	j = port->running_frame_count;
-	frame_count = synccom_port_get_register(port, 0, FIFO_FC_OFFSET);
+	frame_count = get_frame_count(port);
 	if((frame_count + j) > 1000){
 		printk("bc buffer full\n");
+		mutex_unlock(&port->running_bc_mutex);
 		return;
 	}
 	

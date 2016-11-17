@@ -18,6 +18,7 @@ int main(void)
     }
 
     /* Send "Hello world!" text */
+    
     write(fd, odata, sizeof(odata));
 
     /* Read the data back in (with our loopback connector) */

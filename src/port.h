@@ -197,9 +197,10 @@ struct synccom_port {
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
    
     unsigned char *masterbuf;
+	unsigned char *bc_buffer;
 	int mbsize;
 	int running_frame_count;
-    int bc_buffer[1000];
+    
 	
 #ifdef DEBUG
 	struct debug_interrupt_tracker *interrupt_tracker;

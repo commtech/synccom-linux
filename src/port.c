@@ -118,7 +118,7 @@ int initialize(struct synccom_port *port){
 	port->bulk_in_urb4 = usb_alloc_urb(0, GFP_KERNEL);
 	port->bulk_in_buffer4 = kmalloc(514, GFP_KERNEL);
 	port->masterbuf = kmalloc(1000000, GFP_KERNEL);
-	
+	port->bc_buffer = kmalloc(4000, GFP_KERNEL);
 	
 	port->mbsize = 0;
 	port->running_frame_count = 0;
@@ -254,7 +254,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	mutex_lock(&port->running_bc_mutex);
 	port->running_frame_count -= 1;
 	
-	memmove(port->bc_buffer, port->bc_buffer + 1, port->running_frame_count * 8);
+	memmove(port->bc_buffer, port->bc_buffer + 1, port->running_frame_count * 4);
 	mutex_unlock(&port->running_bc_mutex);
 	
 	//remove or keep status bytes
@@ -669,7 +669,7 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	
     fvalue = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
 		
-	
+			
 return fvalue;	
 }
 
@@ -1443,3 +1443,45 @@ void timer_handler(unsigned long data)
 	synccom_port_cont_read4(port);
 	
 }
+
+
+int update_buffer_size(struct synccom_port *port, unsigned size, int buffer_type)
+{
+	char *new_buffer;
+	
+	new_buffer = kmalloc(size, GFP_ATOMIC);
+	
+	if (new_buffer == NULL) {
+		dev_err(port->device, "not enough memory to update frame buffer size\n");
+		return 0;
+	}
+		
+	switch(buffer_type){
+		case 1:
+			memcpy(new_buffer, port->masterbuf, port->mbsize);
+	
+			kfree(port->masterbuf);
+	
+			port->masterbuf = new_buffer;
+			
+			break;
+			
+		case 2:
+			memcpy(new_buffer, port->bc_buffer, port->running_frame_count * 4);
+	
+			kfree(port->bc_buffer);
+	
+			port->bc_buffer = new_buffer;
+			
+			break;
+			
+		default:
+			return 0;
+			break;
+	}
+	
+	return 1;
+	
+}
+
+
