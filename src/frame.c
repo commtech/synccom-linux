@@ -24,7 +24,6 @@
 #include "frame.h"
 #include "utils.h" /* return_{val_}if_true */
 #include "port.h" /* struct synccom_port */
-#include "card.h" /* struct synccom_card */
 
 static unsigned frame_counter = 1;
 
@@ -47,7 +46,6 @@ struct synccom_frame *synccom_frame_new(struct synccom_port *port)
 	frame->buffer_size = 0;
 	frame->buffer = 0;
 	frame->fifo_initialized = 0;
-	frame->dma_initialized = 0;
 	frame->port = port;
 
 	frame->number = frame_counter;
@@ -60,16 +58,7 @@ void synccom_frame_delete(struct synccom_frame *frame)
 {
 	return_if_untrue(frame);
 
-	if (frame->dma_initialized) {
-		pci_unmap_single(frame->port->card->pci_dev, frame->data_handle,
-						 frame->data_length, DMA_TO_DEVICE);
-
-		pci_unmap_single(frame->port->card->pci_dev, frame->d1_handle,
-						 sizeof(*frame->d1), DMA_TO_DEVICE);
-
-		kfree(frame->d1);
-	}
-
+	
 	synccom_frame_update_buffer_size(frame, 0);
 
 	kfree(frame);
@@ -118,27 +107,6 @@ int synccom_frame_add_data(struct synccom_frame *frame, const char *data,
 	return 1;
 }
 
-int synccom_frame_add_data_from_port(struct synccom_frame *frame, struct synccom_port *port,
-						 unsigned length)
-{
-	
-	return_val_if_untrue(frame, 0);
-	return_val_if_untrue(length > 0, 0);
-
-	/* Only update buffer size if there isn't enough space already */
-	if (frame->data_length + length > frame->buffer_size) {
-		if (synccom_frame_update_buffer_size(frame, frame->data_length + length) == 0) {
-			return 0;
-		}
-	}
-
-	/* Copy the new data to the end of the frame */
-	synccom_port_get_register_rep(port, 0, FIFO_OFFSET, frame->buffer + frame->data_length, length);
-
-	frame->data_length += length;
-
-	return 1;
-}
 
 int synccom_frame_add_data_from_user(struct synccom_frame *frame, const char *data,
 						 unsigned length)
@@ -258,69 +226,7 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame, unsigned size)
 	return 1;
 }
 
-int synccom_frame_setup_descriptors(struct synccom_frame *frame)
-{
-	if (frame->fifo_initialized)
-		return 0;
 
-	frame->d1 = kmalloc(sizeof(*frame->d1), GFP_ATOMIC | GFP_DMA);
-
-	if (!frame->d1)
-		return 0;
-
-	memset(frame->d1, 0, sizeof(*frame->d1));
-
-	frame->d1_handle = pci_map_single(frame->port->card->pci_dev, frame->d1,
-	                                  sizeof(*frame->d1), DMA_TO_DEVICE);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
-	if (dma_mapping_error(&frame->port->card->pci_dev->dev, frame->d1_handle)) {
-#else
-	if (dma_mapping_error(frame->d1_handle)) {
-#endif
-		dev_err(frame->port->device, "dma_mapping_error failed\n");
-
-		kfree(frame->d1);
-		frame->d1 = 0;
-
-		return 0;
-	}
-
-
-	frame->data_handle = pci_map_single(frame->port->card->pci_dev,
-								        frame->buffer, frame->data_length,
-								        DMA_TO_DEVICE);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
-	if (dma_mapping_error(&frame->port->card->pci_dev->dev, frame->data_handle)) {
-#else
-	if (dma_mapping_error(frame->data_handle)) {
-#endif
-		dev_err(frame->port->device, "dma_mapping_error failed\n");
-
-		pci_unmap_single(frame->port->card->pci_dev, frame->d1_handle,
-						 sizeof(*frame->d1), DMA_TO_DEVICE);
-
-		kfree(frame->d1);
-		frame->d1 = 0;
-
-		return 0;
-	}
-
-	frame->d1->control = 0xA0000000 | frame->data_length;
-	frame->d1->data_address = cpu_to_le32(frame->data_handle);
-	frame->d1->data_count = frame->data_length;
-	frame->d1->next_descriptor = cpu_to_le32(frame->port->null_handle);
-
-	frame->dma_initialized = 1;
-
-	return 1;
-}
-
-unsigned synccom_frame_is_dma(struct synccom_frame *frame)
-{
-	return (frame->dma_initialized);
-}
 
 unsigned synccom_frame_is_fifo(struct synccom_frame *frame)
 {
@@ -360,6 +266,7 @@ int get_frame_count(struct synccom_port *port)
 	msg[1] = 0x80;
 	msg[2] = 0x20;
 	
+	mutex_lock(&port->register_access_mutex);
 	 usb_bulk_msg(port->udev, 
 	 usb_sndbulkpipe(port->udev, 1), &msg, 
      sizeof(msg), &count, HZ*10);
@@ -367,6 +274,7 @@ int get_frame_count(struct synccom_port *port)
      usb_bulk_msg(port->udev, 
 	 usb_rcvbulkpipe(port->udev, 1), &value, 
      4, &count, HZ*10);	
+	 mutex_unlock(&port->register_access_mutex);
 	frame_count = ((value>>24)&0xff) | ((value<<8)&0x000000) | ((value>>8)&0xff00) | ((value<<24)&0x00000000);
 	
 	return frame_count;	
@@ -382,15 +290,23 @@ void update_bc_buffer(struct synccom_port *dev)
 	struct synccom_port *port;
 	port = dev;
 	
+	mutex_lock(&port->running_bc_mutex);
 	j = port->running_frame_count;
 	frame_count = get_frame_count(port);
+	if((frame_count + j) > 1000){
+		printk("bc buffer full\n");
+		mutex_unlock(&port->running_bc_mutex);
+		return;
+	}
+	
 	while(i < frame_count){
-		byte_count = get_frame_size(port);
+		byte_count = synccom_port_get_register(port, 0, BC_FIFO_L_OFFSET);
 	  	
 		memcpy((port->bc_buffer + j + i), &byte_count, 4);
 		i++;
 	  }	
-   
+    
 	port->running_frame_count += i;
+	mutex_unlock(&port->running_bc_mutex);
 	
 }

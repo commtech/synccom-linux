@@ -277,43 +277,16 @@ static ssize_t input_memory(struct kobject *kobj, struct kobj_attribute *attr,
 	return sprintf(buf, "%i\n", synccom_port_get_input_memory_usage(port));
 }
 
-static ssize_t output_frames(struct kobject *kobj, struct kobj_attribute *attr,
-							char *buf)
-{
-	struct synccom_port *port = 0;
-
-	port = (struct synccom_port *)dev_get_drvdata((struct device *)kobj);
-
-	return sprintf(buf, "%i\n", synccom_port_get_output_number_frames(port));
-}
-
-static ssize_t input_frames(struct kobject *kobj, struct kobj_attribute *attr,
-							char *buf)
-{
-	struct synccom_port *port = 0;
-
-	port = (struct synccom_port *)dev_get_drvdata((struct device *)kobj);
-
-	return sprintf(buf, "%i\n", synccom_port_get_input_number_frames(port));
-}
-
 static struct kobj_attribute output_memory_attribute =
 	__ATTR(output_memory, SYSFS_READ_ONLY_MODE, output_memory, 0);
 
 static struct kobj_attribute input_memory_attribute =
 	__ATTR(input_memory, SYSFS_READ_ONLY_MODE, input_memory, 0);
 
-static struct kobj_attribute output_frames_attribute =
-	__ATTR(output_frames, SYSFS_READ_ONLY_MODE, output_frames, 0);
-
-static struct kobj_attribute input_frames_attribute =
-	__ATTR(input_frames, SYSFS_READ_ONLY_MODE, input_frames, 0);
 
 static struct attribute *info_attrs[] = {
 	&output_memory_attribute.attr,
 	&input_memory_attribute.attr,
-	&output_frames_attribute.attr,
-	&input_frames_attribute.attr,
 	NULL,
 };
 
@@ -563,83 +536,7 @@ struct attribute_group port_settings_attr_group = {
 
 
 #ifdef DEBUG
-static ssize_t interrupt_count(struct kobject *kobj, struct kobj_attribute *attr,
-							   char *buf)
 
-{
-	struct synccom_port *port = 0;
-	int interrupt_offset = 0;
-
-	port = (struct synccom_port *)dev_get_drvdata((struct device *)kobj);
-
-	interrupt_offset = str_to_interrupt_offset(attr->attr.name);
-
-	if (interrupt_offset >= 0)
-		return sprintf(buf, "%i\n", synccom_port_get_interrupt_count(port, interrupt_offset));
-
-	return 0;
-}
-
-
-static struct kobj_attribute rfs_count_attribute =
-	__ATTR(rfs, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute rft_count_attribute =
-	__ATTR(rft, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute rfe_count_attribute =
-	__ATTR(rfe, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute rfo_count_attribute =
-	__ATTR(rfo, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute rdo_count_attribute =
-	__ATTR(rdo, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute rfl_count_attribute =
-	__ATTR(rfl, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute tin_count_attribute =
-	__ATTR(tin, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dr_hi_count_attribute =
-	__ATTR(dr_hi, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dt_hi_count_attribute =
-	__ATTR(dt_hi, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dr_fe_count_attribute =
-	__ATTR(dr_fe, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dt_fe_count_attribute =
-	__ATTR(dt_fe, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dr_stop_count_attribute =
-	__ATTR(dr_stop, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dt_stop_count_attribute =
-	__ATTR(dt_stop, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute tft_count_attribute =
-	__ATTR(tft, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute alls_count_attribute =
-	__ATTR(alls, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute tdu_count_attribute =
-	__ATTR(tdu, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute ctss_count_attribute =
-	__ATTR(ctss, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute dsrc_count_attribute =
-	__ATTR(dsrc, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute cdc_count_attribute =
-	__ATTR(cdc, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
-
-static struct kobj_attribute ctsa_count_attribute =
-	__ATTR(ctsa, SYSFS_READ_ONLY_MODE, interrupt_count, 0);
 
 static struct attribute *debug_attrs[] = {
 	&rfs_count_attribute.attr,

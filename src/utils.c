@@ -20,7 +20,7 @@
 
 #include "utils.h"
 #include "port.h" /* *_OFFSET */
-#include "card.h" /* FCR_OFFSET */
+
 
 __u32 chars_to_u32(const char *data)
 {
@@ -87,58 +87,6 @@ int str_to_register_offset(const char *str)
 	return -1;
 }
 
-int str_to_interrupt_offset(const char *str)
-{
-	if (strcmp(str, "rfs") == 0)
-		return RFS;
-	else if (strcmp(str, "rft") == 0)
-		return RFT;
-	else if (strcmp(str, "rfe") == 0)
-		return RFE;
-	else if (strcmp(str, "rfo") == 0)
-		return RFO;
-	else if (strcmp(str, "rdo") == 0)
-		return RDO;
-	else if (strcmp(str, "rfl") == 0)
-		return RFL;
-
-	else if (strcmp(str, "tin") == 0)
-		return TIN;
-
-	else if (strcmp(str, "dr_hi") == 0)
-		return DR_HI;
-	else if (strcmp(str, "dt_hi") == 0)
-		return DT_HI;
-	else if (strcmp(str, "dr_fe") == 0)
-		return DR_FE;
-	else if (strcmp(str, "dt_fe") == 0)
-		return DT_FE;
-	else if (strcmp(str, "dr_stop") == 0)
-		return DR_STOP;
-	else if (strcmp(str, "dt_stop") == 0)
-		return DT_STOP;
-
-	else if (strcmp(str, "tft") == 0)
-		return TFT;
-	else if (strcmp(str, "alls") == 0)
-		return ALLS;
-	else if (strcmp(str, "tdu") == 0)
-		return TDU;
-
-	else if (strcmp(str, "ctss") == 0)
-		return CTSS;
-	else if (strcmp(str, "dsrc") == 0)
-		return DSRC;
-	else if (strcmp(str, "cdc") == 0)
-		return CDC;
-	else if (strcmp(str, "ctsa") == 0)
-		return CTSA;
-
-	else
-		printk(KERN_NOTICE DEVICE_NAME " invalid str passed into str_to_interrupt_offset\n");
-
-	return -1;
-}
 
 unsigned is_read_only_register(unsigned offset)
 {
@@ -182,47 +130,6 @@ unsigned port_offset(struct synccom_port *port, unsigned bar, unsigned offset)
 	return offset;
 }
 
-unsigned port_exists(void *port)
-{
-	struct synccom_card *current_card = 0;
-	struct synccom_port *current_port = 0;
 
-	return_val_if_untrue(port, 0);
 
-	list_for_each_entry(current_card, &synccom_cards, list) {
-		struct list_head *ports = synccom_card_get_ports(current_card);
-
-		list_for_each_entry(current_port, ports, list) {
-			if (port == current_port)
-				return 1;
-		}
-	}
-
-	return 0;
-}
-
-unsigned is_synccom_device(struct pci_dev *pdev)
-{
-	switch (pdev->device) {
-		case SYNCCOM_ID:
-		case SSYNCCOM_ID:
-		case SSYNCCOM_104_LVDS_ID:
-		case SYNCCOM_232_ID:
-		case SSYNCCOM_104_UA_ID:
-		case SSYNCCOM_4_UA_ID:
-		case SSYNCCOM_UA_ID:
-		case SSYNCCOM_LVDS_ID:
-		case SYNCCOM_4_UA_ID:
-		case SSYNCCOM_4_LVDS_ID:
-		case SYNCCOM_UA_ID:
-		case SFSCCe_4_ID:
-		case SSYNCCOM_4_UA_CPCI_ID:
-		case SSYNCCOM_4_UA_LVDS_ID:
-		case SSYNCCOM_UA_LVDS_ID:
-		case FSCCe_4_UA_ID:
-       		return 1;
-	}
-
-	return 0;
-}
 

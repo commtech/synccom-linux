@@ -50,7 +50,7 @@ int str_to_register_offset(const char *str);
 int str_to_interrupt_offset(const char *str);
 unsigned is_read_only_register(unsigned offset);
 unsigned port_offset(struct synccom_port *port, unsigned bar, unsigned offset);
-unsigned port_exists(void *port);
+
 unsigned is_synccom_device(struct pci_dev *pdev);
 
 #endif

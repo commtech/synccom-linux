@@ -35,6 +35,10 @@
 #include "debug.h" /* stuct debug_interrupt_tracker */
 #include "flist.h" /* struct synccom_registers */
 
+
+#define FCR_OFFSET 0x40
+#define DSTAR_OFFSET 0x30
+
 #define FIFO_OFFSET 0x00
 #define BC_FIFO_L_OFFSET 0x04
 #define FIFOT_OFFSET 0x08
@@ -113,6 +117,7 @@ struct synccom_port {
 
 	wait_queue_head_t input_queue;
 	wait_queue_head_t output_queue;
+	
 
 	struct synccom_flist queued_iframes; /* Frames already retrieved from the FIFO */
 	struct synccom_flist queued_oframes; /* Frames not yet in the FIFO yet */
@@ -129,6 +134,8 @@ struct synccom_port {
 	struct tasklet_struct istream_tasklet;
 	struct tasklet_struct send_oframe_tasklet;
 	struct tasklet_struct clear_oframe_tasklet;
+	struct tasklet_struct bytecount_list_tasklet;
+	
 
 	unsigned last_isr_value;
 
@@ -145,14 +152,17 @@ struct synccom_port {
 	spinlock_t sent_oframes_spinlock;
 	spinlock_t queued_oframes_spinlock;
 	spinlock_t queued_iframes_spinlock;
+	spinlock_t register_concurrency_spinlock;
+	
 
+	bool frame_counter_status;
 	struct synccom_memory_cap memory_cap;
 	unsigned ignore_timeout;
 	unsigned rx_multiple;
 	int tx_modifiers;
     struct completion comptest;
 	struct timer_list timer;
-	
+	struct work_struct bclist_worker;
 	/***************************usb structure***********************/
 	
 	
@@ -165,12 +175,11 @@ struct synccom_port {
 	struct urb		*bulk_in_urb2;
 	struct urb		*bulk_in_urb3;
 	struct urb		*bulk_in_urb4;
-	struct urb      *bulk_out_urb;
-	unsigned char   *bulk_out_buffer;
 	unsigned char   *bulk_in_buffer2;
 	unsigned char   *bulk_in_buffer3;
 	unsigned char   *bulk_in_buffer4;
 	unsigned char   *bulk_in_buffer;
+	
 		/* the buffer to receive data */
 	size_t			bulk_in_size;		/* the size of the receive buffer */
 	size_t			bulk_in_filled;		/* number of bytes in the buffer */
@@ -181,14 +190,17 @@ struct synccom_port {
 	int			    errors;			/* the last request tanked */
 	bool			ongoing_read;		/* a read is going on */
 	spinlock_t		err_lock;		/* lock for errors */
-	struct kref		    kref;
-	struct mutex		io_mutex;		/* synchronize I/O with disconnect */
+	struct kref		kref;
+	struct mutex	io_mutex;		/* synchronize I/O with disconnect */
+	struct mutex    running_bc_mutex;
+	struct mutex    register_access_mutex;
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
    
     unsigned char *masterbuf;
+	unsigned char *bc_buffer;
 	int mbsize;
 	int running_frame_count;
-    int bc_buffer[1000];
+    
 	
 #ifdef DEBUG
 	struct debug_interrupt_tracker *interrupt_tracker;
@@ -206,8 +218,6 @@ void program_synccom(struct synccom_port *port, char *line);
 
 
 
-void synccom_port_delete(struct synccom_port *port);
-
 int synccom_port_write(struct synccom_port *port, const char *data, unsigned length);
 ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count);
 
@@ -216,15 +226,17 @@ unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 							 unsigned register_offset);
+							 
+__u32 syncom_update_frames(struct synccom_port *port);
+							 
+//__u32 synccom_port_get_register_async(struct synccom_port *port, unsigned bar,
+//							 unsigned register_offset);
 
-void synccom_port_get_register_rep(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, char *buf,
-								unsigned byte_count);
 
 int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 							unsigned register_offset, __u32 value);
 
-void synccom_port_set_register_rep(struct synccom_port *port, unsigned bar,
+void synccom_port_send_data(struct synccom_port *port, unsigned bar,
 								unsigned register_offset, char *data,
 								unsigned byte_count);
 
@@ -245,9 +257,6 @@ void synccom_port_resume(struct synccom_port *port);
 
 unsigned synccom_port_get_output_memory_usage(struct synccom_port *port);
 unsigned synccom_port_get_input_memory_usage(struct synccom_port *port);
-
-unsigned synccom_port_get_output_number_frames(struct synccom_port *port);
-unsigned synccom_port_get_input_number_frames(struct synccom_port *port);
 
 unsigned synccom_port_get_input_memory_cap(struct synccom_port *port);
 unsigned synccom_port_get_output_memory_cap(struct synccom_port *port);
@@ -309,4 +318,5 @@ __u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
 __u32 synccom_port_cont_read2(struct synccom_port *port);
 __u32 synccom_port_cont_read3(struct synccom_port *port);
 __u32 synccom_port_cont_read4(struct synccom_port *port);
+void timer_handler(unsigned long data);
 #endif
