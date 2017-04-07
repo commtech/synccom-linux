@@ -31,7 +31,7 @@
 #include "utils.h"
 
 /* Define these values to match your devices */
-#define SYNCCOM_VENDOR_ID	0x18f7
+#define SYNCCOM_VENDOR_ID	0x2eb0
 #define SYNCCOM_PRODUCT_ID	0x0030
 
 unsigned force_fifo = DEFAULT_FORCE_FIFO_VALUE;
