@@ -589,7 +589,7 @@ static struct usb_driver synccom_driver = {
 module_usb_driver(synccom_driver);
 
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.1.0");
+MODULE_VERSION("1.1.1");
 MODULE_AUTHOR("Landon Unruh <landonu@commtech-fastcom.com>");
 
 MODULE_DESCRIPTION("Driver for the Sync Com series of cards from Commtech, Inc.");
