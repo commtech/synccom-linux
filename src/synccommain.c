@@ -255,7 +255,9 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	struct synccom_port *port = 0;
 	int error_code = 0;
-	
+	char clock_bits[20];
+	struct synccom_registers *regs;
+
 	port = file->private_data;
    
 	switch (cmd) {
@@ -267,14 +269,23 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		 break;
 		
 	case SYNCCOM_GET_REGISTERS:
+		
+		regs = kmalloc(sizeof(struct synccom_registers), GFP_KERNEL);
+		copy_from_user(regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers));
+
 		//spin_lock_irqsave(&port->board_settings_spinlock, flags);
-		synccom_port_get_registers(port, (struct synccom_registers *)arg);
+		synccom_port_get_registers(port, regs);
 		//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
+		copy_to_user((struct synccom_registers *)arg, regs, sizeof(struct synccom_registers));
+		kfree(regs);
 		break;
 
 	case SYNCCOM_SET_REGISTERS:
+		regs = kmalloc(sizeof(struct synccom_registers), GFP_KERNEL);
 		//spin_lock_irqsave(&port->board_settings_spinlock, flags);
-		synccom_port_set_registers(port, (struct synccom_registers *)arg);
+		copy_from_user(regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers));
+		synccom_port_set_registers(port, regs);
+		kfree(regs);
 		//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
 		break;
 
@@ -328,7 +339,8 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_SET_CLOCK_BITS:
-		synccom_port_set_clock_bits(port, (char *)arg);
+		copy_from_user(clock_bits, (char *)arg, 20);
+		synccom_port_set_clock_bits(port, clock_bits);
 		break;
 
 	case SYNCCOM_ENABLE_IGNORE_TIMEOUT:
