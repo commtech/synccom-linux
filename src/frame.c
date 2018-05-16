@@ -307,6 +307,7 @@ void update_bc_buffer(struct synccom_port *dev)
 	  }	
     
 	port->running_frame_count += i;
+	wake_up_interruptible(&port->input_queue);
 	mutex_unlock(&port->running_bc_mutex);
 	
 }

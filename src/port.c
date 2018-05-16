@@ -1368,7 +1368,7 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 	//frame->fifo_initialized = 1; what was this for???
 
 	if (transmit_length == 0)
-		return 0;
+		return 1;
 		
 		
 	synccom_port_send_data(port, 0, FIFO_OFFSET,
@@ -1446,7 +1446,7 @@ void timer_handler(unsigned long data)
 	
 }
 
-
+/*
 int update_buffer_size(struct synccom_port *port, unsigned size, int buffer_type)
 {
 	char *new_buffer;
@@ -1486,4 +1486,4 @@ int update_buffer_size(struct synccom_port *port, unsigned size, int buffer_type
 	
 }
 
-
+*/
