@@ -20,7 +20,7 @@
 
 #include <linux/version.h> /* LINUX_VERSION_CODE, KERNEL_VERSION */
 #include <linux/workqueue.h>
-#include <asm/uaccess.h> /* copy_*_user in <= 2.6.24 */
+#include <linux/uaccess.h> /* copy_*_user in <= 2.6.24 */
 
 #include "port.h"
 #include "frame.h" /* struct synccom_frame */
