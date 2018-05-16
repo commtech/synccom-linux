@@ -181,7 +181,7 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 		
     
 
-	while ((!synccom_port_has_incoming_data(port)) || (port->bc_buffer[0] > port->mbsize) || (port->running_frame_count < 1)) {
+	while (!synccom_port_has_incoming_data(port)) {
 		up(&port->read_semaphore);
          
 		if (file->f_flags & O_NONBLOCK)

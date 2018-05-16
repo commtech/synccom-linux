@@ -120,6 +120,8 @@ int initialize(struct synccom_port *port){
 	port->masterbuf = kmalloc(1000000, GFP_KERNEL);
 	port->bc_buffer = kmalloc(4000, GFP_KERNEL);
 	
+    memset(port->bc_buffer, 0, 4000);
+
 	port->mbsize = 0;
 	port->running_frame_count = 0;
 	
@@ -254,7 +256,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 	mutex_lock(&port->running_bc_mutex);
 	port->running_frame_count -= 1;
 	
-	memmove(port->bc_buffer, port->bc_buffer + 1, port->running_frame_count * 4);
+	memmove(port->bc_buffer, port->bc_buffer + 1, ((port->running_frame_count > 0) ? port->running_frame_count : 1) * 4);
 	mutex_unlock(&port->running_bc_mutex);
 	
 	//remove or keep status bytes
@@ -288,7 +290,7 @@ unsigned synccom_port_has_incoming_data(struct synccom_port *port)
 	}
 	else {
 		spin_lock_irq(&port->queued_iframes_spinlock);
-		if (port->mbsize > 0)
+		if (port->mbsize >= port->bc_buffer[0])
 			status = 1;
 		spin_unlock_irq(&port->queued_iframes_spinlock);
 	}
