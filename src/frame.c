@@ -259,29 +259,40 @@ int get_frame_size(struct synccom_port *port)
 int get_frame_count(struct synccom_port *port)
 {
 	int frame_count;
-	char msg[3];
+	char *msg = NULL;
 	int count;
-	int value;
+	__u32 *value = NULL;
+	
+	
+	msg = kmalloc(3, GFP_KERNEL);
+	value = kmalloc(sizeof(__u32) * 1, GFP_KERNEL);
+	
 	msg[0] = 0x6b;
 	msg[1] = 0x80;
 	msg[2] = 0x20;
 	
 	mutex_lock(&port->register_access_mutex);
-	 usb_bulk_msg(port->udev, 
-	 usb_sndbulkpipe(port->udev, 1), &msg, 
-     sizeof(msg), &count, HZ*10);
+
+	usb_bulk_msg(port->udev, 
+	usb_sndbulkpipe(port->udev, 1), msg, 
+	sizeof(msg), &count, HZ*10);
 	
-     usb_bulk_msg(port->udev, 
-	 usb_rcvbulkpipe(port->udev, 1), &value, 
-     4, &count, HZ*10);	
-	 mutex_unlock(&port->register_access_mutex);
-	frame_count = ((value>>24)&0xff) | ((value<<8)&0x000000) | ((value>>8)&0xff00) | ((value<<24)&0x00000000);
-	
+	usb_bulk_msg(port->udev, 
+	usb_rcvbulkpipe(port->udev, 1), value, 
+	sizeof(value), &count, HZ*10);
+
+	mutex_unlock(&port->register_access_mutex);
+	frame_count = ((*value>>24)&0xff) | ((*value<<8)&0x000000) | ((*value>>8)&0xff00) | ((*value<<24)&0x00000000);
+	//frame_count = 1;	
+	kfree(msg);
+	kfree(value);
+
 	return frame_count;	
 }
 
 void update_bc_buffer(struct synccom_port *dev)
 {
+
 
 	int i = 0;
 	int j = 0;
@@ -293,6 +304,7 @@ void update_bc_buffer(struct synccom_port *dev)
 	mutex_lock(&port->running_bc_mutex);
 	j = port->running_frame_count;
 	frame_count = get_frame_count(port);
+
 	if((frame_count + j) > 1000){
 		printk("bc buffer full\n");
 		mutex_unlock(&port->running_bc_mutex);

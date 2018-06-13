@@ -639,11 +639,11 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 {
 	
 	unsigned offset;
-	__u32 value = 0;
+	__u32 *value = NULL;
 	__u32 fvalue = 0;
-    int command = 0x6b;
+    	int command = 0x6b;
 	int count;
-	char msg[3];
+	char *msg = NULL;
 	
 	struct synccom_port *dev;
 	dev = port;
@@ -653,6 +653,9 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	
 	offset = port_offset(port, bar, register_offset);
 		
+	msg = kmalloc(3, GFP_KERNEL);
+	value = kmalloc(sizeof(__u32) * 1, GFP_KERNEL);
+
 	msg[0] = command;
 	msg[1] = (offset >> 8) & 0xFF;
 	msg[2] = offset & 0xFF;
@@ -660,18 +663,21 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	
 	mutex_lock(&port->register_access_mutex);
 	        usb_bulk_msg(port->udev, 
-	        usb_sndbulkpipe(port->udev, 1), &msg, 
+	        usb_sndbulkpipe(port->udev, 1), msg, 
 		    sizeof(msg), &count, HZ*10);
 	
             usb_bulk_msg(port->udev, 
-	        usb_rcvbulkpipe(port->udev, 1), &value, 
+	        usb_rcvbulkpipe(port->udev, 1), value, 
 		    sizeof(value), &count, HZ*10);	
 	mutex_unlock(&port->register_access_mutex);
 
 	
-    fvalue = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
+    fvalue = ((*value>>24)&0xff) | ((*value<<8)&0xff0000) | ((*value>>8)&0xff00) | ((*value<<24)&0xff000000);
 		
-			
+		
+	kfree(msg);
+	kfree(value);
+	
 return fvalue;	
 }
 
@@ -683,8 +689,8 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 {
 	
 	unsigned offset = 0;
-    int command = 0x6a;
-	char msg[7]; 
+    	int command = 0x6a;
+	char *msg; 
 	int count;
 	
 	return_val_if_untrue(port, 0);
@@ -698,22 +704,24 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 		return -ETIMEDOUT;
 	}
 
+	msg = kmalloc(7, GFP_KERNEL);
 	//construct a message string to send to the synccom
 	msg[0] = command;
 	msg[1] = (offset >> 8) & 0xFF;
 	msg[2] = offset & 0xFF;
 	msg[3] = (value >> 24) & 0xFF;
-    msg[4] = (value >> 16) & 0xFF;
+    	msg[4] = (value >> 16) & 0xFF;
 	msg[5] = (value >> 8) & 0xFF;
 	msg[6] =  value & 0xFF;
 	
 	//send the message to the synccom
 	mutex_lock(&port->register_access_mutex);
          usb_bulk_msg(port->udev, 
-	     usb_sndbulkpipe(port->udev, 1), &msg, 
+	     usb_sndbulkpipe(port->udev, 1), msg, 
 		 sizeof(msg), &count, HZ*10);		  
 	mutex_unlock(&port->register_access_mutex);
 	
+	kfree(msg);
 	return 1;
 }
 
@@ -750,28 +758,30 @@ void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
 	
 	unsigned offset = 0;
     int count;
-    char msg[7];
+    char *msg = NULL;
 	
 	return_if_untrue(port);
 	return_if_untrue(bar <= 2);
 	return_if_untrue(data);
 	return_if_untrue(byte_count > 0);
 	
-	
+	msg = kmalloc(7, GFP_KERNEL);
+
 	offset = port_offset(port, bar, register_offset);
 	
 	msg[0] = 0x6a;
 	msg[1] = 0x00;
 	msg[2] = 0x40;
 	msg[3] = data[0];
-    msg[4] = data[1];
+    	msg[4] = data[1];
 	msg[5] = data[2];
 	msg[6] = data[3];
 	
 	     usb_bulk_msg(port->udev, 
 	     usb_sndbulkpipe(port->udev, 1), &msg, 
-		 7, &count, HZ*10);		
+		 7, &count, HZ*10);
 	
+	kfree(msg);
 }
 
 /*
