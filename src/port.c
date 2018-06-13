@@ -290,7 +290,7 @@ unsigned synccom_port_has_incoming_data(struct synccom_port *port)
 	}
 	else {
 		spin_lock_irq(&port->queued_iframes_spinlock);
-		if (port->mbsize >= port->bc_buffer[0])
+		if ((port->bc_buffer[0] > 0) && (port->mbsize >= port->bc_buffer[0]))
 			status = 1;
 		spin_unlock_irq(&port->queued_iframes_spinlock);
 	}
