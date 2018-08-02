@@ -257,6 +257,8 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int error_code = 0;
 	char clock_bits[20];
 	struct synccom_registers *regs;
+	unsigned int tmp_int=0;
+	struct synccom_memory_cap tmp_synccom_memcap;
 
 	port = file->private_data;
    
@@ -312,7 +314,8 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_GET_APPEND_STATUS:
-		*(unsigned *)arg = synccom_port_get_append_status(port);
+		tmp_int = synccom_port_get_append_status(port);
+		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
 		break;
 
 	case SYNCCOM_ENABLE_APPEND_TIMESTAMP:
@@ -326,16 +329,20 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_GET_APPEND_TIMESTAMP:
-		*(unsigned *)arg = synccom_port_get_append_timestamp(port);
+		tmp_int = synccom_port_get_append_timestamp(port);
+		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
 		break;
 
 	case SYNCCOM_SET_MEMORY_CAP:
-		synccom_port_set_memory_cap(port, (struct synccom_memory_cap *)arg);
+		copy_from_user(&tmp_synccom_memcap,(void*)arg,sizeof(tmp_synccom_memcap));
+		synccom_port_set_memory_cap(port, &tmp_synccom_memcap);
 		break;
 
 	case SYNCCOM_GET_MEMORY_CAP:
-		((struct synccom_memory_cap *)arg)->input = synccom_port_get_input_memory_cap(port);
-		((struct synccom_memory_cap *)arg)->output = synccom_port_get_output_memory_cap(port);
+		tmp_synccom_memcap.input = synccom_port_get_input_memory_cap(port);
+		tmp_synccom_memcap.output = synccom_port_get_output_memory_cap(port);
+		copy_to_user(&(((struct synccom_memory_cap *)arg)->input), &tmp_synccom_memcap.input, sizeof(tmp_synccom_memcap.input));
+		copy_to_user(&(((struct synccom_memory_cap *)arg)->output), &tmp_synccom_memcap.output, sizeof(tmp_synccom_memcap.output));
 		break;
 
 	case SYNCCOM_SET_CLOCK_BITS:
@@ -352,11 +359,13 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_GET_IGNORE_TIMEOUT:
-		*(unsigned *)arg = synccom_port_get_ignore_timeout(port);
+		tmp_int = synccom_port_get_ignore_timeout(port);
+		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
 		break;
 
 	case SYNCCOM_SET_TX_MODIFIERS:
-		if ((error_code = synccom_port_set_tx_modifiers(port, (unsigned)arg)) < 0)
+		copy_from_user(&tmp_int,(void*)arg,sizeof(tmp_int));
+		if ((error_code = synccom_port_set_tx_modifiers(port, (unsigned)tmp_int)) < 0)
 			return error_code;
 		break;
 
@@ -373,7 +382,8 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_GET_RX_MULTIPLE:
-		*(unsigned *)arg = synccom_port_get_rx_multiple(port);
+		tmp_int = synccom_port_get_rx_multiple(port);
+		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
 		break;
 		
    case SYNCCOM_REPROGRAM:
