@@ -134,7 +134,13 @@ int initialize(struct synccom_port *port){
 	synccom_flist_init(&port->sent_oframes);
 	synccom_flist_init(&port->queued_iframes);
 	
-	setup_timer(&port->timer, &timer_handler, (unsigned long)port);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
+	init_timer(&port->timer);
+	port->timer.data = (unsigned long) port;
+	port->timer.function = &timer_handler;
+#else
+	timer_setup(&port->timer, &timer_handler, (unsigned long)port);
+#endif
 	
 	INIT_WORK(&port->bclist_worker, frame_count_worker);
 	
@@ -1444,16 +1450,20 @@ void program_synccom(struct synccom_port *port, char *line)
 	
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 void timer_handler(unsigned long data)
 {
 	struct synccom_port *port = (struct synccom_port *)data;
-		
-	
+#else
+void timer_handler(struct timer_list *t)
+{
+	struct synccom_port *port = from_timer(port, t, timer);
+#endif
+
 	synccom_port_cont_read(port, 0, CCR0_OFFSET);
 	synccom_port_cont_read2(port);
 	synccom_port_cont_read3(port);
 	synccom_port_cont_read4(port);
-	
 }
 
 /*

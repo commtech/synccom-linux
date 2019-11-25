@@ -318,5 +318,9 @@ __u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
 __u32 synccom_port_cont_read2(struct synccom_port *port);
 __u32 synccom_port_cont_read3(struct synccom_port *port);
 __u32 synccom_port_cont_read4(struct synccom_port *port);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 void timer_handler(unsigned long data);
+#else
+void timer_handler(struct timer_list *t);
+#endif
 #endif
