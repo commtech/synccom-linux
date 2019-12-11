@@ -139,7 +139,7 @@ int initialize(struct synccom_port *port){
 	port->timer.data = (unsigned long) port;
 	port->timer.function = &timer_handler;
 #else
-	timer_setup(&port->timer, &timer_handler, (unsigned long)port);
+	timer_setup(&port->timer, &timer_handler, 0);
 #endif
 	
 	INIT_WORK(&port->bclist_worker, frame_count_worker);
