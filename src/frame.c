@@ -236,24 +236,30 @@ unsigned synccom_frame_is_fifo(struct synccom_frame *frame)
 int get_frame_size(struct synccom_port *port)
 {
 	int frame_length;
-	char msg[3];
+	char *msg = NULL;
 	int count;
-	int value;
+	__u32 *value = NULL;
+
+	msg = kmalloc(3, GFP_KERNEL);
+	value = kmalloc(sizeof(*value) * 1, GFP_KERNEL);
+
 	msg[0] = 0x6b;
 	msg[1] = 0x80;
 	msg[2] = 0x08;
+
+	usb_bulk_msg(port->udev,
+	usb_sndbulkpipe(port->udev, 1), msg,
+	3, &count, HZ*10);
 	
-	 usb_bulk_msg(port->udev, 
-	 usb_sndbulkpipe(port->udev, 1), &msg, 
-     sizeof(msg), &count, HZ*10);
-	
-     usb_bulk_msg(port->udev, 
-	 usb_rcvbulkpipe(port->udev, 1), &value, 
-     4, &count, HZ*10);	
-	frame_length = ((value>>24)&0xff) | ((value<<8)&0xff0000) | ((value>>8)&0xff00) | ((value<<24)&0xff000000);
-	
-	return frame_length;	
-	
+	usb_bulk_msg(port->udev,
+	usb_rcvbulkpipe(port->udev, 1), value,
+	sizeof(*value), &count, HZ*10);
+
+	frame_length = ((*value>>24)&0xff) | ((*value<<8)&0xff0000) | ((*value>>8)&0xff00) | ((*value<<24)&0xff000000);
+	kfree(msg);
+	kfree(value);
+
+	return frame_length;
 }
 
 int get_frame_count(struct synccom_port *port)
@@ -265,7 +271,7 @@ int get_frame_count(struct synccom_port *port)
 	
 	
 	msg = kmalloc(3, GFP_KERNEL);
-	value = kmalloc(sizeof(__u32) * 1, GFP_KERNEL);
+	value = kmalloc(sizeof(*value) * 1, GFP_KERNEL);
 	
 	msg[0] = 0x6b;
 	msg[1] = 0x80;
@@ -275,11 +281,11 @@ int get_frame_count(struct synccom_port *port)
 
 	usb_bulk_msg(port->udev, 
 	usb_sndbulkpipe(port->udev, 1), msg, 
-	sizeof(msg), &count, HZ*10);
+	3, &count, HZ*10);
 	
 	usb_bulk_msg(port->udev, 
 	usb_rcvbulkpipe(port->udev, 1), value, 
-	sizeof(value), &count, HZ*10);
+	sizeof(*value), &count, HZ*10);
 
 	mutex_unlock(&port->register_access_mutex);
 	frame_count = ((*value>>24)&0xff) | ((*value<<8)&0x000000) | ((*value>>8)&0xff00) | ((*value<<24)&0x00000000);

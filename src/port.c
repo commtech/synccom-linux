@@ -783,8 +783,8 @@ void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
 	msg[5] = data[2];
 	msg[6] = data[3];
 	
-	     usb_bulk_msg(port->udev, 
-	     usb_sndbulkpipe(port->udev, 1), &msg, 
+	     usb_bulk_msg(port->udev,
+	     usb_sndbulkpipe(port->udev, 1), msg,
 		 7, &count, HZ*10);
 	
 	kfree(msg);
@@ -1435,19 +1435,21 @@ void program_synccom(struct synccom_port *port, char *line)
 {
 	
 	 int count;
-	 char msg[50];
+	 char *msg = NULL;
 	 int i;
+	 msg = kmalloc(50, GFP_KERNEL);
 	 msg[0] = 0x06;
-	 
+
 	 for(i = 0; line[i] != 13; i++)
 	 {
 		 msg[i+1] = line[i];
 	 }
-	  
-	  usb_bulk_msg(port->udev, 
-	        usb_sndbulkpipe(port->udev, 1), &msg, 
+
+	  usb_bulk_msg(port->udev,
+	        usb_sndbulkpipe(port->udev, 1), msg,
 		    i + 1, &count, HZ*10);
-	
+
+	kfree(msg);
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
