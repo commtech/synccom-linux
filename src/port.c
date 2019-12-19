@@ -670,11 +670,11 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	mutex_lock(&port->register_access_mutex);
 	        usb_bulk_msg(port->udev, 
 	        usb_sndbulkpipe(port->udev, 1), msg, 
-		    sizeof(msg), &count, HZ*10);
+		    3, &count, HZ*10);
 	
             usb_bulk_msg(port->udev, 
 	        usb_rcvbulkpipe(port->udev, 1), value, 
-		    sizeof(value), &count, HZ*10);	
+		    sizeof(*value), &count, HZ*10);	
 	mutex_unlock(&port->register_access_mutex);
 
 	
@@ -724,7 +724,7 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 	mutex_lock(&port->register_access_mutex);
          usb_bulk_msg(port->udev, 
 	     usb_sndbulkpipe(port->udev, 1), msg, 
-		 sizeof(msg), &count, HZ*10);		  
+		 7, &count, HZ*10);		  
 	mutex_unlock(&port->register_access_mutex);
 	
 	kfree(msg);
