@@ -934,7 +934,7 @@ int synccom_port_purge_rx(struct synccom_port *port)
 		error_code = synccom_port_execute_RRES(port);
 		memset(port->masterbuf, 0, port->mbsize);
 		port->mbsize = 0;
-		memset(port->bc_buffer, 0, port->running_frame_count);
+		memset(port->bc_buffer, 0, port->running_frame_count * sizeof(int));
 		port->running_frame_count = 0;
 		
 	spin_unlock(&port->queued_iframes_spinlock);
