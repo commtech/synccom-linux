@@ -64,6 +64,6 @@ void synccom_frame_clear(struct synccom_frame *frame);
 
 unsigned synccom_frame_is_fifo(struct synccom_frame *frame);
 int get_frame_size(struct synccom_port *port);
-int get_frame_count(struct synccom_port *port);
+int get_frame_count(struct synccom_port *port, int need_lock);
 void update_bc_buffer(struct synccom_port *dev);
 #endif
