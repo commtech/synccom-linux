@@ -40,7 +40,7 @@ static ssize_t register_store(struct kobject *kobj,
 	value = (unsigned)simple_strtoul(buf, &end, 16);
 
 	if (register_offset >= 0) {
-		synccom_port_set_register(port, bar_number, register_offset, value);
+		synccom_port_set_register(port, bar_number, register_offset, value, 1);
 		return count;
 	}
 
@@ -60,7 +60,7 @@ static ssize_t register_show(struct kobject *kobj, struct kobj_attribute *attr,
 
 	if (register_offset >= 0) {
 		return sprintf(buf, "%08x\n", synccom_port_get_register(port, bar_number,
-					   (unsigned)register_offset));
+					   (unsigned)register_offset, 1));
 	}
 
 	return 0;

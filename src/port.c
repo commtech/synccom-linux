@@ -70,7 +70,7 @@ int initialize(struct synccom_port *port){
 	port->pending_iframe = 0;
 	port->pending_oframe = 0;
 
-	spin_lock_init(&port->board_settings_spinlock);
+	//spin_lock_init(&port->board_settings_spinlock);
 	spin_lock_init(&port->board_rx_spinlock);
 	spin_lock_init(&port->board_tx_spinlock);
 
@@ -139,13 +139,13 @@ int initialize(struct synccom_port *port){
 	port->timer.data = (unsigned long) port;
 	port->timer.function = &timer_handler;
 #else
-	timer_setup(&port->timer, &timer_handler, (unsigned long)port);
+	timer_setup(&port->timer, &timer_handler, 0);
 #endif
 	
 	INIT_WORK(&port->bclist_worker, frame_count_worker);
 	
-	synccom_port_execute_RRES(port);
-	synccom_port_execute_TRES(port);
+	synccom_port_execute_RRES(port, 1);
+	synccom_port_execute_TRES(port, 1);
 	
 	mod_timer(&port->timer, jiffies + msecs_to_jiffies(20));
 	
@@ -167,7 +167,7 @@ void synccom_port_reset_timer(struct synccom_port *port)
 }
 
 /* Basic check to see if the CE bit is set. */
-unsigned synccom_port_timed_out(struct synccom_port *port)
+unsigned synccom_port_timed_out(struct synccom_port *port, int need_lock)
 {
 	__u32 star_value = 0;
 	unsigned i = 0;
@@ -175,7 +175,7 @@ unsigned synccom_port_timed_out(struct synccom_port *port)
 	return_val_if_untrue(port, 0);
 
 	for (i = 0; i < DEFAULT_TIMEOUT_VALUE; i++) {
-		star_value = synccom_port_get_register(port, 0, STAR_OFFSET);
+		star_value = synccom_port_get_register(port, 0, STAR_OFFSET, need_lock);
 
 		if ((star_value & CE_BIT) == 0)
 			return 0;
@@ -641,7 +641,7 @@ __u32 synccom_port_cont_read4(struct synccom_port *port)
 
 
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
-							 unsigned register_offset)
+							 unsigned register_offset, int need_lock)
 {
 	
 	unsigned offset;
@@ -667,15 +667,19 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 	msg[2] = offset & 0xFF;
 	
 	
-	mutex_lock(&port->register_access_mutex);
+	if (need_lock) {
+		mutex_lock(&port->register_access_mutex);
+	}
 	        usb_bulk_msg(port->udev, 
 	        usb_sndbulkpipe(port->udev, 1), msg, 
-		    sizeof(msg), &count, HZ*10);
+		    3, &count, HZ*10);
 	
             usb_bulk_msg(port->udev, 
 	        usb_rcvbulkpipe(port->udev, 1), value, 
-		    sizeof(value), &count, HZ*10);	
-	mutex_unlock(&port->register_access_mutex);
+		    sizeof(*value), &count, HZ*10);	
+	if (need_lock) {
+		mutex_unlock(&port->register_access_mutex);
+	}
 
 	
     fvalue = ((*value>>24)&0xff) | ((*value<<8)&0xff0000) | ((*value>>8)&0xff00) | ((*value<<24)&0xff000000);
@@ -691,7 +695,7 @@ return fvalue;
 
 
 int synccom_port_set_register(struct synccom_port *port, unsigned bar,
-						   unsigned register_offset, __u32 value)
+						   unsigned register_offset, __u32 value, int need_lock)
 {
 	
 	unsigned offset = 0;
@@ -706,7 +710,7 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
    
 	/* Checks to make sure there is a clock present. */
 	 if (register_offset == CMDR_OFFSET && port->ignore_timeout == 0
-		&& synccom_port_timed_out(port)) {
+		&& synccom_port_timed_out(port, need_lock)) {
 		return -ETIMEDOUT;
 	}
 
@@ -721,11 +725,15 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 	msg[6] =  value & 0xFF;
 	
 	//send the message to the synccom
-	mutex_lock(&port->register_access_mutex);
+	if (need_lock) {
+		mutex_lock(&port->register_access_mutex);
+	}
          usb_bulk_msg(port->udev, 
 	     usb_sndbulkpipe(port->udev, 1), msg, 
-		 sizeof(msg), &count, HZ*10);		  
-	mutex_unlock(&port->register_access_mutex);
+		 7, &count, HZ*10);		  
+	if (need_lock) {
+		mutex_unlock(&port->register_access_mutex);
+	}
 	
 	kfree(msg);
 	return 1;
@@ -783,8 +791,8 @@ void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
 	msg[5] = data[2];
 	msg[6] = data[3];
 	
-	     usb_bulk_msg(port->udev, 
-	     usb_sndbulkpipe(port->udev, 1), &msg, 
+	     usb_bulk_msg(port->udev,
+	     usb_sndbulkpipe(port->udev, 1), msg,
 		 7, &count, HZ*10);
 	
 	kfree(msg);
@@ -813,13 +821,13 @@ int synccom_port_set_registers(struct synccom_port *port,
 		}
 
 		if (register_offset <= MAX_OFFSET) {
-			if (synccom_port_set_register(port, 0, register_offset, ((synccom_register *)regs)[i]) == -ETIMEDOUT)
+			if (synccom_port_set_register(port, 0, register_offset, ((synccom_register *)regs)[i], 1) == -ETIMEDOUT)
 				stalled = 1;
 				
 		}
 		else {
 			synccom_port_set_register(port, 2, FCR_OFFSET,
-								   ((synccom_register *)regs)[i]);
+								   ((synccom_register *)regs)[i], 1);
 				
 		}
 	}
@@ -843,10 +851,10 @@ void synccom_port_get_registers(struct synccom_port *port, struct synccom_regist
 			continue;
 
 		if (i * 4 <= MAX_OFFSET) {
-			((synccom_register *)regs)[i] = synccom_port_get_register(port, 0, i * 4);
+			((synccom_register *)regs)[i] = synccom_port_get_register(port, 0, i * 4, 1);
 		}
 		else {
-			((synccom_register *)regs)[i] = synccom_port_get_register(port, 2,FCR_OFFSET);
+			((synccom_register *)regs)[i] = synccom_port_get_register(port, 2,FCR_OFFSET, 1);
 		}
 	}
 }
@@ -857,7 +865,7 @@ __u32 synccom_port_get_TXCNT(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET);
+	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET, 1);
 
 	return (fifo_bc_value & 0x1FFF0000) >> 16;
 }
@@ -869,7 +877,7 @@ unsigned synccom_port_get_RXCNT(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET);
+	fifo_bc_value = synccom_port_get_register(port, 0, FIFO_BC_OFFSET, 1);
 
 	/* Not sure why, but this can be larger than 8192. We add
        the 8192 check here so other code can count on the value
@@ -882,7 +890,7 @@ __u8 synccom_port_get_FREV(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET, 1);
 
 	return (__u8)((vstr_value & 0x000000FF));
 }
@@ -893,7 +901,7 @@ __u8 synccom_port_get_PREV(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET, 1);
 
 	return (__u8)((vstr_value & 0x0000FF00) >> 8);
 }
@@ -904,7 +912,7 @@ __u16 synccom_port_get_PDEV(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET);
+	vstr_value = synccom_port_get_register(port, 0, VSTR_OFFSET, 1);
 
 	return (__u16)((vstr_value & 0xFFFF0000) >> 16);
 }
@@ -915,7 +923,7 @@ unsigned synccom_port_get_CE(struct synccom_port *port)
 
 	return_val_if_untrue(port, 0);
 
-	star_value = synccom_port_get_register(port, 0, STAR_OFFSET);
+	star_value = synccom_port_get_register(port, 0, STAR_OFFSET, 1);
 
 	return (unsigned)((star_value & 0x00040000) >> 18);
 }
@@ -928,17 +936,22 @@ int synccom_port_purge_rx(struct synccom_port *port)
 
 	dev_dbg(port->device, "purge_rx\n");
 
+	mutex_lock(&port->running_bc_mutex);
+	mutex_lock(&port->register_access_mutex);
+	
+		error_code = synccom_port_execute_RRES(port, 0);
+	// Spinlock only after calling usb_bulk_msg.
     spin_lock(&port->queued_iframes_spinlock);
     spin_lock(&port->istream_spinlock);
-	
-		error_code = synccom_port_execute_RRES(port);
 		memset(port->masterbuf, 0, port->mbsize);
 		port->mbsize = 0;
-		memset(port->bc_buffer, 0, port->running_frame_count);
+		memset(port->bc_buffer, 0, port->running_frame_count * sizeof(int));
 		port->running_frame_count = 0;
 		
-	spin_unlock(&port->queued_iframes_spinlock);
     spin_unlock(&port->istream_spinlock);
+	spin_unlock(&port->queued_iframes_spinlock);
+	mutex_unlock(&port->register_access_mutex);
+	mutex_unlock(&port->running_bc_mutex);
 	
 	return 1;
 }
@@ -951,9 +964,11 @@ int synccom_port_purge_tx(struct synccom_port *port)
 
 	dev_dbg(port->device, "purge_tx\n");
 
-	spin_lock(&port->board_tx_spinlock);
-	error_code = synccom_port_execute_TRES(port);
-	spin_unlock(&port->board_tx_spinlock);
+	mutex_lock(&port->register_access_mutex);
+	//spin_lock(&port->board_tx_spinlock);
+	error_code = synccom_port_execute_TRES(port, 0);
+	//spin_unlock(&port->board_tx_spinlock);
+	mutex_unlock(&port->register_access_mutex);
 
 	if (error_code < 0)
 		return error_code;
@@ -1112,8 +1127,10 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 		clk_value <<= 0x08;
 	}
 
-	orig_fcr_value = synccom_port_get_register(port, 2, FCR_OFFSET);
-	spin_lock_irqsave(&port->board_settings_spinlock, flags);
+	mutex_lock(&port->register_access_mutex);
+	// Don't spinlock here because usb_bulk_msg may sleep.
+	//spin_lock_irqsave(&port->board_settings_spinlock, flags);
+	orig_fcr_value = synccom_port_get_register(port, 2, FCR_OFFSET, 0);
 
 	
 	
@@ -1156,7 +1173,8 @@ for(i = 0; i < 323; i++)
 		
 	synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data[0], data_index);
 }
-	spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
+	//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
+	mutex_unlock(&port->register_access_mutex);
 
 	kfree(data);
 }
@@ -1248,18 +1266,18 @@ unsigned synccom_port_get_rx_multiple(struct synccom_port *port)
 	return port->rx_multiple;
 }
 
-int synccom_port_execute_TRES(struct synccom_port *port)
+int synccom_port_execute_TRES(struct synccom_port *port, int need_lock)
 {
 	return_val_if_untrue(port, 0);
 
-	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x08000000);
+	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x08000000, need_lock);
 }
 
-int synccom_port_execute_RRES(struct synccom_port *port)
+int synccom_port_execute_RRES(struct synccom_port *port, int need_lock)
 {
 	return_val_if_untrue(port, 0);
 	
-	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x00020000);
+	return synccom_port_set_register(port, 0, CMDR_OFFSET, 0x00020000, need_lock);
 }
 
 
@@ -1346,7 +1364,7 @@ void synccom_port_execute_transmit(struct synccom_port *port, unsigned dma)
 	if (port->tx_modifiers & TXEXT)
 		command_value |= 0x20000000;
 	
-	synccom_port_set_register(port, command_bar, command_register, command_value);
+	synccom_port_set_register(port, command_bar, command_register, command_value, 1);
 }
 
 #define TX_FIFO_SIZE 4096
@@ -1398,7 +1416,7 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 	/* If this is the first time we add data to the FIFO for this frame we
 	   tell the port how much data is in this frame. */
 	 if (current_length == buffer_size)
-		synccom_port_set_register(port, 0, BC_FIFO_L_OFFSET, buffer_size);
+		synccom_port_set_register(port, 0, BC_FIFO_L_OFFSET, buffer_size, 1);
 
 	/* We still have more data to send. */
 	if (!synccom_frame_is_empty(frame))
@@ -1435,19 +1453,21 @@ void program_synccom(struct synccom_port *port, char *line)
 {
 	
 	 int count;
-	 char msg[50];
+	 char *msg = NULL;
 	 int i;
+	 msg = kmalloc(50, GFP_KERNEL);
 	 msg[0] = 0x06;
-	 
+
 	 for(i = 0; line[i] != 13; i++)
 	 {
 		 msg[i+1] = line[i];
 	 }
-	  
-	  usb_bulk_msg(port->udev, 
-	        usb_sndbulkpipe(port->udev, 1), &msg, 
+
+	  usb_bulk_msg(port->udev,
+	        usb_sndbulkpipe(port->udev, 1), msg,
 		    i + 1, &count, HZ*10);
-	
+
+	kfree(msg);
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)

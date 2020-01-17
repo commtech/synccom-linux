@@ -142,7 +142,7 @@ struct synccom_port {
 	unsigned append_status;
 	unsigned append_timestamp;
 
-	spinlock_t board_settings_spinlock; /* Anything that will alter the settings at a board level */
+	//spinlock_t board_settings_spinlock; /* Anything that will alter the settings at a board level */
 	spinlock_t board_rx_spinlock; /* Anything that will alter the state of rx at a board level */
 	spinlock_t board_tx_spinlock; /* Anything that will alter the state of rx at a board level */
 
@@ -225,7 +225,7 @@ unsigned synccom_port_has_iframes(struct synccom_port *port, unsigned lock);
 unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
-							 unsigned register_offset);
+							 unsigned register_offset, int need_lock);
 							 
 __u32 syncom_update_frames(struct synccom_port *port);
 							 
@@ -234,7 +234,8 @@ __u32 syncom_update_frames(struct synccom_port *port);
 
 
 int synccom_port_set_register(struct synccom_port *port, unsigned bar,
-							unsigned register_offset, __u32 value);
+							unsigned register_offset, __u32 value,
+							int need_lock);
 
 void synccom_port_send_data(struct synccom_port *port, unsigned bar,
 								unsigned register_offset, char *data,
@@ -249,8 +250,8 @@ unsigned synccom_port_get_RXCNT(struct synccom_port *port);
 __u8 synccom_port_get_FREV(struct synccom_port *port);
 __u8 synccom_port_get_PREV(struct synccom_port *port);
 
-int synccom_port_execute_TRES(struct synccom_port *port);
-int synccom_port_execute_RRES(struct synccom_port *port);
+int synccom_port_execute_TRES(struct synccom_port *port, int need_lock);
+int synccom_port_execute_RRES(struct synccom_port *port, int need_lock);
 
 void synccom_port_suspend(struct synccom_port *port);
 void synccom_port_resume(struct synccom_port *port);
