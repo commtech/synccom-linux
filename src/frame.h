@@ -23,12 +23,13 @@ THE SOFTWARE.
 #ifndef SYNCCOM_FRAME_H
 #define SYNCCOM_FRAME_H
 
+#include <linux/version.h>
 #include <linux/list.h> /* struct list_head */
 #include "descriptor.h" /* struct synccom_descriptor */
 
 
-#ifdef RELEASE_PREVIEW
-typedef struct timespec synccom_timestamp;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
+typedef struct timespec64 synccom_timestamp;
 #else
 typedef struct timeval synccom_timestamp;
 #endif
