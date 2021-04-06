@@ -260,6 +260,7 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	char clock_bits[20];
 	struct synccom_registers *regs;
 	unsigned int tmp_int=0;
+	unsigned tmp;
 	struct synccom_memory_cap tmp_synccom_memcap;
 
 	port = file->private_data;
@@ -366,8 +367,8 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SYNCCOM_SET_TX_MODIFIERS:
-		copy_from_user(&tmp_int,(void*)arg,sizeof(tmp_int));
-		if ((error_code = synccom_port_set_tx_modifiers(port, (unsigned)tmp_int)) < 0)
+		tmp = (unsigned)arg;
+		if ((error_code = synccom_port_set_tx_modifiers(port, (unsigned)tmp)) < 0)
 			return error_code;
 		break;
 
