@@ -163,8 +163,8 @@ int synccom_frame_remove_data(struct synccom_frame *frame, char *destination,
 	if (destination)
 		untransferred_bytes = copy_to_user(destination, frame->buffer, length);
    
-    if (untransferred_bytes > 0)
-        return 0;
+   	if (untransferred_bytes > 0)
+   	 	return 0;
   
 	frame->data_length -= length;
 	

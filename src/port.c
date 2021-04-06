@@ -1105,16 +1105,13 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 	unsigned strb_value = STRB_BASE;
 	unsigned dta_value = DTA_BASE;
 	unsigned clk_value = CLK_BASE;
-	unsigned long flags;
-    char buf_data[4];
+	char buf_data[4];
 	__u32 *data = 0;
 	unsigned data_index = 0;
 
 	return_if_untrue(port);
 
-     clock_data[15] |= 0x04;
-   
-
+     	clock_data[15] |= 0x04;
    
 	data = kmalloc(sizeof(__u32) * 323, GFP_KERNEL);
 
@@ -1142,10 +1139,6 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 		for (j = 7; j >= 0; j--) {
 			int bit = ((clock_data[i] >> j) & 1);
 
-            /* This is required for 4-port cards. I'm not sure why at the
-               moment */
-			//data[data_index++] = new_fcr_value;
-
 			if (bit)
 				new_fcr_value |= dta_value; /* Set data bit */
 			else
@@ -1166,15 +1159,15 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 	data[data_index++] = new_fcr_value;
 	data[data_index++] = orig_fcr_value;
 
-for(i = 0; i < 323; i++)
-{
-        buf_data[0] = data[i] >> 24; 
+	for(i = 0; i < 323; i++)
+	{
+		buf_data[0] = data[i] >> 24; 
 		buf_data[1] = data[i] >> 16; 
 		buf_data[2] = data[i] >> 8;
 		buf_data[3] = data[i] >> 0;
-		
-	synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data[0], data_index);
-}
+
+		synccom_port_set_clock(port, 0, FCR_OFFSET, &buf_data[0], data_index);
+	}
 	//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
 	mutex_unlock(&port->register_access_mutex);
 
