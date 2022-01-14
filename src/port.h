@@ -1,22 +1,22 @@
 /*
 Copyright 2020 Commtech, Inc.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy 
-of this software and associated documentation files (the "Software"), to deal 
-in the Software without restriction, including without limitation the rights 
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
-copies of the Software, and to permit persons to whom the Software is 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in 
+The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
@@ -106,9 +106,9 @@ struct synccom_port {
 	struct device *device;
 	unsigned channel;
 	char *name;
-    
-	
-	
+
+
+
 	struct synccom_descriptor *null_descriptor;
 	dma_addr_t null_handle;
 
@@ -119,7 +119,7 @@ struct synccom_port {
 
 	wait_queue_head_t input_queue;
 	wait_queue_head_t output_queue;
-	
+
 
 	struct synccom_flist queued_iframes; /* Frames already retrieved from the FIFO */
 	struct synccom_flist queued_oframes; /* Frames not yet in the FIFO yet */
@@ -137,7 +137,7 @@ struct synccom_port {
 	struct tasklet_struct send_oframe_tasklet;
 	struct tasklet_struct clear_oframe_tasklet;
 	struct tasklet_struct bytecount_list_tasklet;
-	
+
 
 	unsigned last_isr_value;
 
@@ -155,7 +155,7 @@ struct synccom_port {
 	spinlock_t queued_oframes_spinlock;
 	spinlock_t queued_iframes_spinlock;
 	spinlock_t register_concurrency_spinlock;
-	
+
 
 	bool frame_counter_status;
 	struct synccom_memory_cap memory_cap;
@@ -166,9 +166,9 @@ struct synccom_port {
 	struct timer_list timer;
 	struct work_struct bclist_worker;
 	/***************************usb structure***********************/
-	
-	
-	
+
+
+
 	struct usb_device	*udev;			/* the usb device for this device */
 	struct usb_interface	*interface;		/* the interface for this device */
 	struct semaphore	limit_sem;		/* limiting the number of writes in progress */
@@ -181,7 +181,7 @@ struct synccom_port {
 	unsigned char   *bulk_in_buffer3;
 	unsigned char   *bulk_in_buffer4;
 	unsigned char   *bulk_in_buffer;
-	
+
 		/* the buffer to receive data */
 	size_t			bulk_in_size;		/* the size of the receive buffer */
 	size_t			bulk_in_filled;		/* number of bytes in the buffer */
@@ -197,13 +197,13 @@ struct synccom_port {
 	struct mutex    running_bc_mutex;
 	struct mutex    register_access_mutex;
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
-   
+
     unsigned char *masterbuf;
 	unsigned int *bc_buffer;
 	int mbsize;
 	int running_frame_count;
-    
-	
+
+
 #ifdef DEBUG
 	struct debug_interrupt_tracker *interrupt_tracker;
 	struct tasklet_struct print_tasklet;
@@ -228,9 +228,9 @@ unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 							 unsigned register_offset, int need_lock);
-							 
+
 __u32 syncom_update_frames(struct synccom_port *port);
-							 
+
 //__u32 synccom_port_get_register_async(struct synccom_port *port, unsigned bar,
 //							 unsigned register_offset);
 
@@ -321,6 +321,8 @@ __u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
 __u32 synccom_port_cont_read2(struct synccom_port *port);
 __u32 synccom_port_cont_read3(struct synccom_port *port);
 __u32 synccom_port_cont_read4(struct synccom_port *port);
+void oframe_worker(unsigned long data);
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 void timer_handler(unsigned long data);
 #else
