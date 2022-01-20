@@ -52,7 +52,8 @@ void frame_count_worker(struct work_struct *port);
 */
 
 
-int initialize(struct synccom_port *port){
+int initialize(struct synccom_port *port)
+{
 
 	char clock_bits[20] = DEFAULT_CLOCK_BITS;
 
@@ -189,23 +190,23 @@ unsigned synccom_port_timed_out(struct synccom_port *port, int need_lock)
 }
 
 /* Create the data structures the work horse functions use to send data. */
-int synccom_port_write(struct synccom_port *port, const char *data, unsigned length)
-{
-
+int synccom_port_write(struct synccom_port *port, const char *data, unsigned length) {
+	unsigned long queued_flags = 0;
 	struct synccom_frame *frame = 0;
 
 	return_val_if_untrue(port, 0);
 
 	frame = synccom_frame_new(port);
-
 	if (!frame)
 		return -ENOMEM;
 
 	synccom_frame_add_data_from_user(frame, data, length);
 
-    synccom_port_transmit_frame(port, frame);
+	spin_lock_irqsave(&port->queued_oframes_spinlock, queued_flags);
+	synccom_flist_add_frame(&port->queued_oframes, frame);
+	spin_unlock_irqrestore(&port->queued_oframes_spinlock, queued_flags);
 
-	synccom_frame_delete(frame);
+	tasklet_schedule(&port->send_oframe_tasklet);
 
 	return 0;
 }
@@ -308,6 +309,51 @@ unsigned synccom_port_has_incoming_data(struct synccom_port *port)
 	return status;
 }
 
+static void write_data_callback(struct urb *urb)
+{
+	struct synccom_port *port;
+	int transfer_size = 0;
+
+	port = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&port->interface->dev,
+				"%s - nonzero write bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&port->err_lock);
+		port->errors = urb->status;
+		spin_unlock(&port->err_lock);
+		return;
+	}
+	transfer_size = urb->actual_length;
+	usb_free_urb(urb);
+}
+
+static void write_register_callback(struct urb *urb)
+{
+	struct synccom_port *port;
+	int transfer_size = 0;
+
+	port = urb->context;
+	if (urb->status) {
+		if (!(urb->status == -ENOENT ||
+		    urb->status == -ECONNRESET ||
+		    urb->status == -ESHUTDOWN))
+			dev_err(&port->interface->dev,
+				"%s - nonzero write register bulk status received: %d\n",
+				__func__, urb->status);
+
+		spin_lock(&port->err_lock);
+		port->errors = urb->status;
+		spin_unlock(&port->err_lock);
+		return;
+	}
+	transfer_size = urb->actual_length;
+	usb_free_urb(urb);
+}
 
 static void usb_callback(struct urb *urb)
 {
@@ -698,49 +744,36 @@ return fvalue;
 
 
 
-int synccom_port_set_register(struct synccom_port *port, unsigned bar,
-						   unsigned register_offset, __u32 value, int need_lock)
+int synccom_port_set_register(struct synccom_port *port, unsigned bar, unsigned register_offset, __u32 value, int need_lock)
 {
-
+	struct urb *register_urb;
 	unsigned offset = 0;
-    	int command = 0x6a;
+  int command = 0x6a;
 	char *msg;
-	int count;
+	int retval;
 
+	// TODO just temporary until I get rid of need_lock
+	retval = need_lock;
 	return_val_if_untrue(port, 0);
 	return_val_if_untrue(bar <= 2, 0);
 
+ 	register_urb = usb_alloc_urb(0, GFP_ATOMIC);
+	if(!register_urb) return -1;
 	offset = port_offset(port, bar, register_offset);
 
-	/* Checks to make sure there is a clock present. */
-	 if (register_offset == CMDR_OFFSET && port->ignore_timeout == 0
-		&& synccom_port_timed_out(port, need_lock)) {
-		return -ETIMEDOUT;
-	}
-
 	msg = kmalloc(7, GFP_KERNEL);
-	//construct a message string to send to the synccom
 	msg[0] = command;
 	msg[1] = (offset >> 8) & 0xFF;
 	msg[2] = offset & 0xFF;
 	msg[3] = (value >> 24) & 0xFF;
-    	msg[4] = (value >> 16) & 0xFF;
+  msg[4] = (value >> 16) & 0xFF;
 	msg[5] = (value >> 8) & 0xFF;
 	msg[6] =  value & 0xFF;
-
-	//send the message to the synccom
-	if (need_lock) {
-		mutex_lock(&port->register_access_mutex);
-	}
-         usb_bulk_msg(port->udev,
-	     usb_sndbulkpipe(port->udev, 1), msg,
-		 7, &count, HZ*10);
-	if (need_lock) {
-		mutex_unlock(&port->register_access_mutex);
-	}
-
+	usb_fill_bulk_urb(register_urb, port->udev, usb_sndbulkpipe(port->udev, 1), msg, 7, write_register_callback, port);
+	retval = usb_submit_urb(register_urb, GFP_ATOMIC);
 	kfree(msg);
 	return 1;
+	// return retval;
 }
 
 /*
@@ -748,25 +781,21 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 	specific offset.
 */
 
-void synccom_port_send_data(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, char *data,
-								unsigned byte_count)
+int synccom_port_send_data(struct synccom_port *port, char *data, unsigned byte_count)
 {
+	struct urb *write_urb;
 
-	unsigned offset = 0;
-    int count;
+	return_val_if_untrue(port, -1);
+	return_val_if_untrue(data, -1);
+	return_val_if_untrue(byte_count > 0, -1);
 
-	return_if_untrue(port);
-	return_if_untrue(bar <= 2);
-	return_if_untrue(data);
-	return_if_untrue(byte_count > 0);
+	write_urb = usb_alloc_urb(0, GFP_ATOMIC);
+	if(!write_urb) return -1;
 
-	offset = port_offset(port, bar, register_offset);
-
-	     usb_bulk_msg(port->udev,
-	     usb_sndbulkpipe(port->udev, 6), data,
-		 byte_count, &count, 0);
-
+	dev_dbg(port->device, "Attempting to write %d bytes.", byte_count);
+	usb_fill_bulk_urb(write_urb, port->udev, usb_sndbulkpipe(port->udev, 6),
+			data, byte_count, write_data_callback, port);
+	return usb_submit_urb(write_urb, GFP_ATOMIC);
 }
 
 void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
@@ -1371,29 +1400,23 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 {
 
 	unsigned current_length = 0;
-	unsigned buffer_size = 0;
 	unsigned fifo_space = 0;
-	unsigned size_in_fifo = 0;
 	unsigned transmit_length = 0;
+	unsigned buffer_size = 0;
 
-	current_length = synccom_frame_get_length(frame);
-	size_in_fifo = ((current_length % 4) == 0) ? current_length : current_length + (4 - current_length % 4);
 	buffer_size = synccom_frame_get_buffer_size(frame);
+	current_length = synccom_frame_get_length(frame);
 	fifo_space = TX_FIFO_SIZE - 1;
 	fifo_space -= fifo_space % 4;
 
 	/* Determine the maximum amount of data we can send this time around. */
-	transmit_length = (size_in_fifo > fifo_space) ? fifo_space : size_in_fifo;
-
-	//frame->fifo_initialized = 1; what was this for???
+	if(fifo_space > current_length) transmit_length = current_length;
+	else transmit_length = fifo_space;
 
 	if (transmit_length == 0)
 		return 0;
 
-
-	synccom_port_send_data(port, 0, FIFO_OFFSET,
-							   frame->buffer,
-							   transmit_length);
+	synccom_port_send_data(port, frame->buffer, transmit_length);
 
 	synccom_frame_remove_data(frame, NULL, transmit_length);
 
@@ -1401,13 +1424,12 @@ int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *fram
 
 	/* If this is the first time we add data to the FIFO for this frame we
 	   tell the port how much data is in this frame. */
- 	 if (current_length == buffer_size)
-	 	synccom_port_set_register(port, 0, BC_FIFO_L_OFFSET, buffer_size, 1);
+	if (current_length == buffer_size)
+		synccom_port_set_register(port, 0, BC_FIFO_L_OFFSET, buffer_size, 1);
 
 	/* We still have more data to send. */
 	if (!synccom_frame_is_empty(frame))
 		return 1;
-
 	return 2;
 }
 
@@ -1424,7 +1446,7 @@ unsigned synccom_port_transmit_frame(struct synccom_port *port, struct synccom_f
 	dev_dbg(port->device, "F#%i => %i byte%s%s\n",
 			frame->number, transmit_length,
 			(transmit_length == 1) ? "" : "s",
-			(result != 2) ? " (starting)" : "");
+			(result == 2) ? " (finished)" : "");
 
 	return result;
 }
@@ -1512,11 +1534,11 @@ void oframe_worker(unsigned long data)
 	spin_unlock_irqrestore(&port->pending_oframe_spinlock, frame_flags);
 	spin_unlock_irqrestore(&port->board_tx_spinlock, board_flags);
 
-	if (result == 2)
+	if (result) {
 		wake_up_interruptible(&port->output_queue);
-
-	if (result == 0)
 		tasklet_schedule(&port->send_oframe_tasklet);
+	}
+
 }
 
 /*

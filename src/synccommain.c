@@ -1,22 +1,22 @@
 /*
 Copyright 2020 Commtech, Inc.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy 
-of this software and associated documentation files (the "Software"), to deal 
-in the Software without restriction, including without limitation the rights 
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
-copies of the Software, and to permit persons to whom the Software is 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in 
+The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
@@ -70,8 +70,8 @@ static void synccom_delete(struct kref *kref)
 	usb_free_urb(port->bulk_in_urb2);
 	usb_free_urb(port->bulk_in_urb3);
 	usb_free_urb(port->bulk_in_urb4);
-	
-	
+
+
 	usb_put_dev(port->udev);
 
 	kfree(port->bulk_in_buffer);
@@ -83,7 +83,7 @@ static void synccom_delete(struct kref *kref)
 
 static int synccom_open(struct inode *inode, struct file *file)
 {
-        
+
 	struct synccom_port *port;
 	struct usb_interface *interface;
 	int subminor;
@@ -108,17 +108,17 @@ static int synccom_open(struct inode *inode, struct file *file)
 	retval = usb_autopm_get_interface(interface);
 	if (retval)
 		goto exit;
-   
-        
+
+
 
 	/* increment our usage count for the device */
 	kref_get(&port->kref);
 	/* save our object in the file's private structure */
 	file->private_data = port;
-	
-        
+
+
 exit:
-   
+
 	return retval;
 }
 
@@ -169,7 +169,7 @@ static int synccom_flush(struct file *file, fl_owner_t id)
 static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 			 loff_t *ppos)
 {
-	
+
 	struct synccom_port *port = 0;
 	ssize_t read_count;
 
@@ -180,12 +180,12 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 
 	if (down_interruptible(&port->read_semaphore))
 		return -ERESTARTSYS;
-		
-    
+
+
 
 	while (!synccom_port_has_incoming_data(port)) {
 		up(&port->read_semaphore);
-         
+
 		if (file->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
@@ -198,7 +198,7 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 			return -ERESTARTSYS;
 	}
 
-    
+
 	read_count = synccom_port_read(port, buf, count);
 
 	up(&port->read_semaphore);
@@ -211,13 +211,13 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 static ssize_t synccom_write(struct file *file, const char *buf,
 			  size_t count, loff_t *ppos)
 {
-    
+
 	struct synccom_port *port = 0;
 	int error_code = 0;
- 
+
 	port = file->private_data;
-	
-   
+
+
 	if (count == 0)
 		return count;
 
@@ -232,17 +232,14 @@ static ssize_t synccom_write(struct file *file, const char *buf,
 	while (synccom_port_get_output_memory_usage(port) + count > synccom_port_get_output_memory_cap(port)) {
 		up(&port->write_semaphore);
 
-		if (file->f_flags & O_NONBLOCK)
-			return -EAGAIN;
+		if (file->f_flags & O_NONBLOCK) return -EAGAIN;
 
-		if (wait_event_interruptible(port->output_queue,
-				synccom_port_get_output_memory_usage(port) + count <= synccom_port_get_output_memory_cap(port))) {
+		if (wait_event_interruptible(port->output_queue, synccom_port_get_output_memory_usage(port) + count <= synccom_port_get_output_memory_cap(port))) {
+			dev_dbg(port->device, "output_queue popped.. %d usage, %d cap", synccom_port_get_output_memory_usage(port), synccom_port_get_output_memory_cap(port));
 			return -ERESTARTSYS;
 		}
 
-		if (down_interruptible(&port->write_semaphore))
-		      
-			return -ERESTARTSYS;
+		if (down_interruptible(&port->write_semaphore)) return -ERESTARTSYS;
 	}
 
 	error_code = synccom_port_write(port, buf, count);
@@ -263,7 +260,7 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct synccom_memory_cap tmp_synccom_memcap;
 
 	port = file->private_data;
-   
+
 	switch (cmd) {
 	case TEST:
 	 	//update_bc_buffer(port);
@@ -271,9 +268,9 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		 schedule_work(&port->bclist_worker);
 		// syncom_update_frames(port);
 		 break;
-		
+
 	case SYNCCOM_GET_REGISTERS:
-		
+
 		regs = kmalloc(sizeof(struct synccom_registers), GFP_KERNEL);
 		copy_from_user(regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers));
 
@@ -387,7 +384,7 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		tmp_int = synccom_port_get_rx_multiple(port);
 		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
 		break;
-		
+
    case SYNCCOM_REPROGRAM:
 	     program_synccom(port, (char *)arg);
 		 break;
@@ -409,7 +406,7 @@ static const struct file_operations synccom_fops = {
 	.flush =	synccom_flush,
 	//.llseek =	noop_llseek,
 	.unlocked_ioctl = synccom_ioctl,
-        
+
 };
 
 /*
@@ -426,7 +423,7 @@ static int synccom_probe(struct usb_interface *interface,
 		      const struct usb_device_id *id)
 {
 	struct synccom_port *port;
-	
+
 	struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
 	size_t buffer_size;
@@ -479,7 +476,7 @@ static int synccom_probe(struct usb_interface *interface,
 		    usb_endpoint_is_bulk_out(endpoint)) {
 			/* we found a bulk out endpoint */
 			port->bulk_out_endpointAddr = endpoint->bEndpointAddress;
-			
+
 		}
 
                 if (port->bulk_out_endpointAddr &&
@@ -512,9 +509,9 @@ static int synccom_probe(struct usb_interface *interface,
 	dev_info(&interface->dev,
 		 "USB synccom device now attached to synccom%d\n",
 		 interface->minor);
-    
+
 	initialize(port);
-	
+
 	return 0;
 
 error:
@@ -544,7 +541,7 @@ static void synccom_disconnect(struct usb_interface *interface)
 
 	/* decrement our usage count */
 	kref_put(&port->kref, synccom_delete);
-    
+
 	del_timer(&port->timer);
 
 	dev_info(&interface->dev, "USB synccom #%d now disconnected", minor);
@@ -553,13 +550,13 @@ static void synccom_disconnect(struct usb_interface *interface)
 
 static void synccom_draw_down(struct synccom_port *port)
 {
-	
+
 	int time;
-     
+
 	time = usb_wait_anchor_empty_timeout(&port->submitted, 1000);
 	if (!time)
 		usb_kill_anchored_urbs(&port->submitted);
-	
+
 }
 
 static int synccom_suspend(struct usb_interface *intf, pm_message_t message)
