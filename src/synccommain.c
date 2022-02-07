@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Commtech, Inc.
+Copyright 2022 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -35,8 +35,6 @@ THE SOFTWARE.
 /* Define these values to match your devices */
 #define SYNCCOM_VENDOR_ID	0x2eb0
 #define SYNCCOM_PRODUCT_ID	0x0030
-
-unsigned force_fifo = DEFAULT_FORCE_FIFO_VALUE;
 
 LIST_HEAD(synccom_cards);
 
@@ -83,8 +81,7 @@ static int synccom_open(struct inode *inode, struct file *file)
 
 	interface = usb_find_interface(&synccom_driver, subminor);
 	if (!interface) {
-		pr_err("%s - error, can't find device for minor %d\n",
-			__func__, subminor);
+		pr_err("%s - error, can't find device for minor %d\n", __func__, subminor);
 		retval = -ENODEV;
 		goto exit;
 	}
@@ -99,16 +96,12 @@ static int synccom_open(struct inode *inode, struct file *file)
 	if (retval)
 		goto exit;
 
-
-
 	/* increment our usage count for the device */
 	kref_get(&port->kref);
 	/* save our object in the file's private structure */
 	file->private_data = port;
 
-
 exit:
-
 	return retval;
 }
 
@@ -156,8 +149,7 @@ static int synccom_flush(struct file *file, fl_owner_t id)
 	return res;
 }
 
-static ssize_t synccom_read(struct file *file, char *buf, size_t count,
-			 loff_t *ppos)
+static ssize_t synccom_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
 
 	struct synccom_port *port = 0;
@@ -192,8 +184,7 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 	return read_count;
 }
 
-static ssize_t synccom_write(struct file *file, const char *buf,
-			  size_t count, loff_t *ppos)
+static ssize_t synccom_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
 
 	struct synccom_port *port = 0;
@@ -235,61 +226,46 @@ static ssize_t synccom_write(struct file *file, const char *buf,
 
 long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-
 	struct synccom_port *port = 0;
-	int error_code = 0;
+	long error_code = 0;
 	char clock_bits[20];
-	struct synccom_registers *regs;
 	unsigned int tmp_int=0;
-	struct synccom_memory_cap tmp_synccom_memcap;
+	struct synccom_registers regs;
+	struct synccom_memory_cap tmp_memcap;
 
 	port = file->private_data;
 
 	switch (cmd) {
 	case TEST:
-	 	//update_bc_buffer(port);
-		 printk("actual %p\n", port);
-		 schedule_work(&port->bclist_worker);
-		// syncom_update_frames(port);
 		 break;
 
 	case SYNCCOM_GET_REGISTERS:
-
-		regs = kmalloc(sizeof(struct synccom_registers), GFP_KERNEL);
-		copy_from_user(regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers));
-
-		//spin_lock_irqsave(&port->board_settings_spinlock, flags);
-		synccom_port_get_registers(port, regs);
-		//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
-		copy_to_user((struct synccom_registers *)arg, regs, sizeof(struct synccom_registers));
-		kfree(regs);
+		if(copy_from_user(&regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers))) {
+			return -EFAULT;
+		}
+		synccom_port_get_registers(port, &regs);
+		if(copy_to_user((struct synccom_registers *)arg, &regs, sizeof(struct synccom_registers))) {
+			return -EFAULT;
+		}
 		break;
 
 	case SYNCCOM_SET_REGISTERS:
-		regs = kmalloc(sizeof(struct synccom_registers), GFP_KERNEL);
-		//spin_lock_irqsave(&port->board_settings_spinlock, flags);
-		copy_from_user(regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers));
-		synccom_port_set_registers(port, regs);
-		kfree(regs);
-		//spin_unlock_irqrestore(&port->board_settings_spinlock, flags);
+		if(copy_from_user(&regs, (struct synccom_registers *)arg, sizeof(struct synccom_registers))) {
+			return -EFAULT;
+		}
+		synccom_port_set_registers(port, &regs);
 		break;
 
 	case SYNCCOM_PURGE_TX:
-		if ((error_code = synccom_port_purge_tx(port)) < 0)
-			return error_code;
-
+		error_code = synccom_port_purge_tx(port);
 		break;
 
 	case SYNCCOM_PURGE_RX:
-		if ((error_code = synccom_port_purge_rx(port)) < 0)
-			return error_code;
-
+		error_code = synccom_port_purge_rx(port);
 		break;
 
 	case SYNCCOM_ENABLE_APPEND_STATUS:
-		if ((error_code = synccom_port_set_append_status(port, 1)) < 0)
-			return error_code;
-
+		error_code = synccom_port_set_append_status(port, 1);
 		break;
 
 	case SYNCCOM_DISABLE_APPEND_STATUS:
@@ -298,13 +274,13 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SYNCCOM_GET_APPEND_STATUS:
 		tmp_int = synccom_port_get_append_status(port);
-		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
+		if(copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int))) {
+			return -EFAULT;
+		}
 		break;
 
 	case SYNCCOM_ENABLE_APPEND_TIMESTAMP:
-		if ((error_code = synccom_port_set_append_timestamp(port, 1)) < 0)
-			return error_code;
-
+		error_code = synccom_port_set_append_timestamp(port, 1);
 		break;
 
 	case SYNCCOM_DISABLE_APPEND_TIMESTAMP:
@@ -313,23 +289,33 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SYNCCOM_GET_APPEND_TIMESTAMP:
 		tmp_int = synccom_port_get_append_timestamp(port);
-		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
+		if(copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int))) {
+			return -EFAULT;
+		}
 		break;
 
 	case SYNCCOM_SET_MEMORY_CAP:
-		copy_from_user(&tmp_synccom_memcap,(void*)arg,sizeof(tmp_synccom_memcap));
-		synccom_port_set_memory_cap(port, &tmp_synccom_memcap);
+		if(copy_from_user(&tmp_memcap, (void *)arg, sizeof(tmp_memcap))) {
+			return -EFAULT;
+		}
+		synccom_port_set_memory_cap(port, &tmp_memcap);
 		break;
 
 	case SYNCCOM_GET_MEMORY_CAP:
-		tmp_synccom_memcap.input = synccom_port_get_input_memory_cap(port);
-		tmp_synccom_memcap.output = synccom_port_get_output_memory_cap(port);
-		copy_to_user(&(((struct synccom_memory_cap *)arg)->input), &tmp_synccom_memcap.input, sizeof(tmp_synccom_memcap.input));
-		copy_to_user(&(((struct synccom_memory_cap *)arg)->output), &tmp_synccom_memcap.output, sizeof(tmp_synccom_memcap.output));
+		tmp_memcap.input = synccom_port_get_input_memory_cap(port);
+		tmp_memcap.output = synccom_port_get_output_memory_cap(port);
+		if(copy_to_user(&(((struct synccom_memory_cap *)arg)->input), &tmp_memcap.input, sizeof(tmp_memcap.input))) {
+			return -EFAULT;
+		}
+		if(copy_to_user(&(((struct synccom_memory_cap *)arg)->output), &tmp_memcap.output, sizeof(tmp_memcap.output))) {
+			return -EFAULT;
+		}
 		break;
 
 	case SYNCCOM_SET_CLOCK_BITS:
-		copy_from_user(clock_bits, (char *)arg, 20);
+		if(copy_from_user(clock_bits, (char *)arg, 20)) {
+			return -EFAULT;
+		}
 		synccom_port_set_clock_bits(port, clock_bits);
 		break;
 
@@ -343,13 +329,14 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SYNCCOM_GET_IGNORE_TIMEOUT:
 		tmp_int = synccom_port_get_ignore_timeout(port);
-		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
+		if(copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int))) {
+			return -EFAULT;
+		}
 		break;
 
 	case SYNCCOM_SET_TX_MODIFIERS:
 		tmp_int = (unsigned int)arg;
-		if ((error_code = synccom_port_set_tx_modifiers(port, (unsigned int)tmp_int)) < 0)
-			return error_code;
+		error_code = synccom_port_set_tx_modifiers(port, (unsigned int)tmp_int);
 		break;
 
 	case SYNCCOM_GET_TX_MODIFIERS:
@@ -366,19 +353,20 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SYNCCOM_GET_RX_MULTIPLE:
 		tmp_int = synccom_port_get_rx_multiple(port);
-		copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int));
+		if(copy_to_user((void*)arg, &tmp_int, sizeof(tmp_int))) {
+			return -EFAULT;
+		}
 		break;
 
    case SYNCCOM_REPROGRAM:
 	     program_synccom(port, (char *)arg);
 		 break;
 	default:
-		dev_dbg(port->device, "unknown ioctl 0x%x\n", cmd);
+		dev_dbg(port->device, "%s - unknown ioctl 0x%x\n", __func__, cmd);
 		return -ENOTTY;
 	}
 
-	return 0;
-
+	return error_code;
 }
 
 static const struct file_operations synccom_fops = {
@@ -403,8 +391,7 @@ static struct usb_class_driver synccom_class = {
 	.minor_base =	USB_synccom_MINOR_BASE,
 };
 
-static int synccom_probe(struct usb_interface *interface,
-		      const struct usb_device_id *id)
+static int synccom_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
 	struct synccom_port *port;
 	struct usb_host_interface *iface_desc;
@@ -416,7 +403,7 @@ static int synccom_probe(struct usb_interface *interface,
 	/* allocate memory for our device state and initialize it */
 	port = kzalloc(sizeof(*port), GFP_KERNEL);
 	if (!port) {
-		dev_err(&interface->dev, "Out of memory\n");
+		dev_err(&interface->dev, "%s - Out of memory\n", __func__);
 		goto error;
 	}
 	kref_init(&port->kref);
@@ -438,20 +425,20 @@ static int synccom_probe(struct usb_interface *interface,
 			buffer_size = endpoint->wMaxPacketSize;
 			port->bulk_in_size = buffer_size;
 			port->bulk_in_endpointAddr = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_in_endpointAddr);
+			dev_dbg(port->device, "%s - Endpoint found: 0x%2.2x", __func__, port->bulk_in_endpointAddr);
 		}
 		if (!port->bulk_out_endpointAddr && usb_endpoint_is_bulk_out(endpoint)) {
 			port->bulk_out_endpointAddr = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_out_endpointAddr);
+			dev_dbg(port->device, "%s - Endpoint found: 0x%2.2x", __func__, port->bulk_out_endpointAddr);
 		}
 		if (port->bulk_out_endpointAddr && usb_endpoint_is_bulk_out(endpoint)) {
 			port->bulk_out_endpointAddr2 = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_out_endpointAddr2);
+			dev_dbg(port->device, "%s - Endpoint found: 0x%2.2x", __func__, port->bulk_out_endpointAddr2);
 		}
 
 	}
 	if (!(port->bulk_in_endpointAddr && port->bulk_out_endpointAddr)) {
-		dev_err(&interface->dev, "Could not find both bulk-in and bulk-out endpoints\n");
+		dev_err(port->device, "%s - Could not find both bulk-in and bulk-out endpoints\n", __func__);
 		goto error;
 	}
 
@@ -468,7 +455,7 @@ static int synccom_probe(struct usb_interface *interface,
 	}
 
 	/* let the user know what node this device is now attached to */
-	dev_info(&interface->dev, "USB synccom device now attached to synccom%d\n", interface->minor);
+	dev_info(port->device, "%s - USB synccom device now attached to synccom%d\n", __func__, interface->minor);
 
 	initialize(port);
 
@@ -504,12 +491,11 @@ static void synccom_disconnect(struct usb_interface *interface)
 
 	del_timer(&port->timer);
 
-	dev_info(&interface->dev, "USB synccom #%d now disconnected", minor);
+	dev_info(port->device, "%s - USB synccom #%d now disconnected", __func__, minor);
 }
 
 static void synccom_draw_down(struct synccom_port *port)
 {
-
 	int time;
 
 	time = usb_wait_anchor_empty_timeout(&port->submitted, 1000);
