@@ -112,11 +112,9 @@ struct synccom_port {
 	/* Prevents simultaneous read(), write() and poll() calls. */
 	struct semaphore read_semaphore;
 	struct semaphore write_semaphore;
-	struct semaphore poll_semaphore;
 
 	wait_queue_head_t input_queue;
 	wait_queue_head_t output_queue;
-
 
 	struct synccom_flist queued_iframes; /* Frames already retrieved from the FIFO */
 	struct synccom_flist pending_iframes;
@@ -124,23 +122,20 @@ struct synccom_port {
 
 	struct synccom_frame *pending_iframe; /* Frame retrieving from the FIFO */
 	struct synccom_frame *pending_oframe; /* Frame being put in the FIFO */
-
 	struct synccom_frame *istream; /* Transparent stream */
 
 	struct synccom_registers register_storage; /* Only valid on suspend/resume */
+	struct synccom_memory_cap memory_cap;
 
-	struct tasklet_struct iframe_tasklet;
-	struct tasklet_struct istream_tasklet;
-	struct tasklet_struct send_oframe_tasklet;
-	struct tasklet_struct bytecount_list_tasklet;
 
 
 	unsigned last_isr_value;
-
 	unsigned append_status;
 	unsigned append_timestamp;
+	unsigned ignore_timeout;
+	unsigned rx_multiple;
+	int tx_modifiers;
 
-	//spinlock_t board_settings_spinlock; /* Anything that will alter the settings at a board level */
 	spinlock_t board_rx_spinlock; /* Anything that will alter the state of rx at a board level */
 	spinlock_t board_tx_spinlock; /* Anything that will alter the state of rx at a board level */
 
@@ -150,26 +145,18 @@ struct synccom_port {
 	spinlock_t queued_oframes_spinlock;
 	spinlock_t queued_iframes_spinlock;
 	spinlock_t pending_iframes_spinlock;
-	spinlock_t register_concurrency_spinlock;
 	struct mutex io_mutex;		/* synchronize I/O with disconnect */
 	struct mutex running_bc_mutex;
 	struct mutex register_access_mutex;
 
-	bool frame_counter_status;
-	struct synccom_memory_cap memory_cap;
-	unsigned ignore_timeout;
-	unsigned rx_multiple;
-	int tx_modifiers;
-    struct completion comptest;
+	struct tasklet_struct send_oframe_tasklet;
 	struct timer_list timer;
 	struct work_struct bclist_worker;
+
 	/***************************usb structure***********************/
-
-
-
 	struct usb_device	*udev;			/* the usb device for this device */
 	struct usb_interface	*interface;		/* the interface for this device */
-	struct semaphore	limit_sem;		/* limiting the number of writes in progress */
+	struct semaphore	limit_sem;		/* limiting the number of writes in progress */ // TODO is this necessary?
 	struct usb_anchor	submitted;		/* in case we need to retract our submissions */
 	struct urb							**bulk_in_urbs;
 	unsigned char						**bulk_in_buffers;
@@ -180,9 +167,8 @@ struct synccom_port {
 	size_t			bulk_in_copied;		/* already copied to user space */
 	__u8			bulk_in_endpointAddr;	/* the address of the bulk in endpoint */
 	__u8			bulk_out_endpointAddr;	/* the address of the bulk out endpoint */
-    __u8            bulk_out_endpointAddr2;
+  __u8            bulk_out_endpointAddr2;
 	int			    errors;			/* the last request tanked */
-	bool			ongoing_read;		/* a read is going on */
 	spinlock_t		err_lock;		/* lock for errors */
 	struct kref		kref;
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
@@ -191,17 +177,11 @@ struct synccom_port {
 	struct debug_interrupt_tracker *interrupt_tracker;
 	struct tasklet_struct print_tasklet;
 #endif
-
 };
 
 
-
-
 int initialize(struct synccom_port *port);
-
 void program_synccom(struct synccom_port *port, char *line);
-
-
 
 int synccom_port_write(struct synccom_port *port, const char *data, unsigned length);
 ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count);
@@ -212,11 +192,6 @@ unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar, unsigned register_offset, int need_lock);
 
 __u32 syncom_update_frames(struct synccom_port *port);
-
-//__u32 synccom_port_get_register_async(struct synccom_port *port, unsigned bar,
-//							 unsigned register_offset);
-
-
 int synccom_port_set_register(struct synccom_port *port, unsigned bar, unsigned register_offset, __u32 value, int need_lock);
 
 int synccom_port_send_data(struct synccom_port *port, char *data, unsigned byte_count);
@@ -241,16 +216,15 @@ unsigned synccom_port_get_input_memory_usage(struct synccom_port *port);
 
 unsigned synccom_port_get_input_memory_cap(struct synccom_port *port);
 unsigned synccom_port_get_output_memory_cap(struct synccom_port *port);
-
 void synccom_port_set_memory_cap(struct synccom_port *port, struct synccom_memory_cap *memory_cap);
+
+void synccom_port_set_clock_bits(struct synccom_port *port, unsigned char *clock_data);
 
 void synccom_port_set_ignore_timeout(struct synccom_port *port, unsigned ignore_timeout);
 unsigned synccom_port_get_ignore_timeout(struct synccom_port *port);
 
 void synccom_port_set_rx_multiple(struct synccom_port *port, unsigned rx_multiple);
 unsigned synccom_port_get_rx_multiple(struct synccom_port *port);
-
-void synccom_port_set_clock_bits(struct synccom_port *port, unsigned char *clock_data);
 
 int synccom_port_set_append_status(struct synccom_port *port, unsigned value);
 unsigned synccom_port_get_append_status(struct synccom_port *port);
@@ -259,21 +233,10 @@ int synccom_port_set_append_timestamp(struct synccom_port *port, unsigned value)
 unsigned synccom_port_get_append_timestamp(struct synccom_port *port);
 
 int synccom_port_set_registers(struct synccom_port *port, const struct synccom_registers *regs);
-
 void synccom_port_get_registers(struct synccom_port *port, struct synccom_registers *regs);
 
-struct synccom_frame *synccom_port_peek_front_frame(struct synccom_port *port, struct list_head *frames);
-
-unsigned synccom_port_using_async(struct synccom_port *port);
 unsigned synccom_port_is_streaming(struct synccom_port *port);
-
-unsigned synccom_port_has_dma(struct synccom_port *port);
-
 unsigned synccom_port_has_incoming_data(struct synccom_port *port);
-
-unsigned synccom_port_get_RFCNT(struct synccom_port *port);
-
-void synccom_port_execute_RST_T(struct synccom_port *port);
 
 #ifdef DEBUG
 unsigned synccom_port_get_interrupt_count(struct synccom_port *port, __u32 isr_bit);

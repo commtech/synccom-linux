@@ -66,8 +66,6 @@ int initialize(struct synccom_port *port)
 	spin_lock_init(&port->queued_iframes_spinlock);
 	spin_lock_init(&port->pending_iframes_spinlock);
 
-	spin_lock_init(&port->register_concurrency_spinlock);
-
 	synccom_port_set_append_status(port, DEFAULT_APPEND_STATUS_VALUE);
 	synccom_port_set_ignore_timeout(port, DEFAULT_IGNORE_TIMEOUT_VALUE);
 	synccom_port_set_tx_modifiers(port, DEFAULT_TX_MODIFIERS_VALUE);
