@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Commtech, Inc.
+Copyright 2022 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,10 +26,7 @@ THE SOFTWARE.
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
 
-static ssize_t register_store(struct kobject *kobj,
-							  struct kobj_attribute *attr, const char *buf,
-							  size_t count,
-							  unsigned bar_number)
+static ssize_t register_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count, unsigned bar_number)
 {
 	struct synccom_port *port = 0;
 	int register_offset = 0;
@@ -49,9 +46,7 @@ static ssize_t register_store(struct kobject *kobj,
 	return 0;
 }
 
-static ssize_t register_show(struct kobject *kobj, struct kobj_attribute *attr,
-							 char *buf, unsigned bar_number)
-
+static ssize_t register_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf, unsigned bar_number)
 {
 	struct synccom_port *port = 0;
 	int register_offset = 0;
@@ -61,35 +56,28 @@ static ssize_t register_show(struct kobject *kobj, struct kobj_attribute *attr,
 	register_offset = str_to_register_offset(attr->attr.name);
 
 	if (register_offset >= 0) {
-		return sprintf(buf, "%08x\n", synccom_port_get_register(port, bar_number,
-					   (unsigned)register_offset, 1));
+		return sprintf(buf, "%08x\n", synccom_port_get_register(port, bar_number, (unsigned)register_offset, 1));
 	}
 
 	return 0;
 }
 
-static ssize_t bar0_register_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t bar0_register_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	return register_store(kobj, attr, buf, count, 0);
 }
 
-static ssize_t bar0_register_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t bar0_register_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return register_show(kobj, attr, buf, 0);
 }
 
-static ssize_t bar2_register_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t bar2_register_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	return register_store(kobj, attr, buf, count, 2);
 }
 
-static ssize_t bar2_register_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t bar2_register_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return register_show(kobj, attr, buf, 2);
 }
@@ -210,8 +198,7 @@ struct attribute_group port_registers_attr_group = {
 
 
 
-static ssize_t purge_tx(struct kobject *kobj, struct kobj_attribute *attr,
-							  const char *buf, size_t count)
+static ssize_t purge_tx(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 
@@ -222,8 +209,7 @@ static ssize_t purge_tx(struct kobject *kobj, struct kobj_attribute *attr,
 	return count;
 }
 
-static ssize_t purge_rx(struct kobject *kobj, struct kobj_attribute *attr,
-							  const char *buf, size_t count)
+static ssize_t purge_rx(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 
@@ -259,8 +245,7 @@ struct attribute_group port_commands_attr_group = {
 
 
 
-static ssize_t output_memory(struct kobject *kobj, struct kobj_attribute *attr,
-							 char *buf)
+static ssize_t output_memory(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -269,8 +254,7 @@ static ssize_t output_memory(struct kobject *kobj, struct kobj_attribute *attr,
 	return sprintf(buf, "%i\n", synccom_port_get_output_memory_usage(port));
 }
 
-static ssize_t input_memory(struct kobject *kobj, struct kobj_attribute *attr,
-								  char *buf)
+static ssize_t input_memory(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -302,9 +286,7 @@ struct attribute_group port_info_attr_group = {
 
 
 
-static ssize_t tx_modifiers_store(struct kobject *kobj,
-								  struct kobj_attribute *attr, const char *buf,
-								  size_t count)
+static ssize_t tx_modifiers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	unsigned value = 0;
@@ -319,8 +301,7 @@ static ssize_t tx_modifiers_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t tx_modifiers_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t tx_modifiers_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -329,9 +310,7 @@ static ssize_t tx_modifiers_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_tx_modifiers(port));
 }
 
-static ssize_t ignore_timeout_store(struct kobject *kobj,
-									struct kobj_attribute *attr, const char *buf,
-									size_t count)
+static ssize_t ignore_timeout_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	unsigned value = 0;
@@ -346,8 +325,7 @@ static ssize_t ignore_timeout_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t ignore_timeout_show(struct kobject *kobj,
-								   struct kobj_attribute *attr, char *buf)
+static ssize_t ignore_timeout_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -356,9 +334,7 @@ static ssize_t ignore_timeout_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_ignore_timeout(port));
 }
 
-static ssize_t rx_multiple_store(struct kobject *kobj,
-									struct kobj_attribute *attr, const char *buf,
-									size_t count)
+static ssize_t rx_multiple_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	unsigned value = 0;
@@ -373,8 +349,7 @@ static ssize_t rx_multiple_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t rx_multiple_show(struct kobject *kobj,
-								   struct kobj_attribute *attr, char *buf)
+static ssize_t rx_multiple_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -383,9 +358,7 @@ static ssize_t rx_multiple_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_rx_multiple(port));
 }
 
-static ssize_t append_status_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t append_status_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	unsigned value = 0;
@@ -400,8 +373,7 @@ static ssize_t append_status_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t append_status_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t append_status_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -410,9 +382,7 @@ static ssize_t append_status_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_append_status(port));
 }
 
-static ssize_t append_timestamp_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t append_timestamp_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	unsigned value = 0;
@@ -427,8 +397,7 @@ static ssize_t append_timestamp_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t append_timestamp_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t append_timestamp_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -437,9 +406,7 @@ static ssize_t append_timestamp_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_append_timestamp(port));
 }
 
-static ssize_t input_memory_cap_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t input_memory_cap_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	struct synccom_memory_cap memory_cap;
@@ -456,8 +423,7 @@ static ssize_t input_memory_cap_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t input_memory_cap_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t input_memory_cap_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 
@@ -466,9 +432,7 @@ static ssize_t input_memory_cap_show(struct kobject *kobj,
 	return sprintf(buf, "%i\n", synccom_port_get_input_memory_cap(port));
 }
 
-static ssize_t output_memory_cap_store(struct kobject *kobj,
-								   struct kobj_attribute *attr, const char *buf,
-								   size_t count)
+static ssize_t output_memory_cap_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct synccom_port *port = 0;
 	struct synccom_memory_cap memory_cap;
@@ -485,8 +449,7 @@ static ssize_t output_memory_cap_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t output_memory_cap_show(struct kobject *kobj,
-								  struct kobj_attribute *attr, char *buf)
+static ssize_t output_memory_cap_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct synccom_port *port = 0;
 

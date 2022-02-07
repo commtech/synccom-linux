@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Commtech, Inc.
+Copyright 2022 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -30,14 +30,11 @@ THE SOFTWARE.
 #include "config.h" /* DEVICE_NAME, DEFAULT_* */
 #include "sysfs.h" /* port_*_attribute_group */
 
-
 void synccom_port_execute_GO_R(struct synccom_port *port);
 void synccom_port_execute_STOP_R(struct synccom_port *port);
 void synccom_port_execute_STOP_T(struct synccom_port *port);
 void synccom_port_execute_RST_R(struct synccom_port *port);
 static void read_data_callback(struct urb *urb);
-extern unsigned force_fifo;
-
 void frame_count_worker(struct work_struct *port);
 
 int initialize(struct synccom_port *port)
@@ -58,7 +55,6 @@ int initialize(struct synccom_port *port)
 	port->memory_cap.input = DEFAULT_INPUT_MEMORY_CAP_VALUE;
 	port->memory_cap.output = DEFAULT_OUTPUT_MEMORY_CAP_VALUE;
 
-	//spin_lock_init(&port->board_settings_spinlock);
 	spin_lock_init(&port->board_rx_spinlock);
 	spin_lock_init(&port->board_tx_spinlock);
 
@@ -123,9 +119,11 @@ int initialize(struct synccom_port *port)
 	synccom_port_execute_TRES(port, 1);
 
 	mod_timer(&port->timer, jiffies + msecs_to_jiffies(20));
+
 	for(i=0;i<NUMBER_OF_URBS;i++) {
 		usb_submit_urb(port->bulk_in_urbs[i], GFP_ATOMIC);
 	}
+
 	return 0;
 }
 
@@ -137,6 +135,7 @@ int synccom_port_create_urbs(struct synccom_port *port)
 	// read urbs
 	port->bulk_in_urbs = kmalloc(NUMBER_OF_URBS * sizeof(struct urb	*), GFP_KERNEL);
 	port->bulk_in_buffers = kmalloc(NUMBER_OF_URBS * sizeof(unsigned char *), GFP_KERNEL);
+
 	for(i=0;i<NUMBER_OF_URBS;i++) {
 		port->bulk_in_urbs[i] = usb_alloc_urb(0, GFP_KERNEL);
 		port->bulk_in_buffers[i] = kmalloc(buffer_size, GFP_KERNEL);
@@ -155,6 +154,7 @@ int synccom_port_destroy_urbs(struct synccom_port *port)
 		usb_free_urb(port->bulk_in_urbs[i]);
 		kfree(port->bulk_in_buffers[i]);
 	}
+
 	kfree(port->bulk_in_urbs);
 	kfree(port->bulk_in_buffers);
 
@@ -169,7 +169,6 @@ void frame_count_worker(struct work_struct *port)
 
 void synccom_port_reset_timer(struct synccom_port *port)
 {
-
 	if (mod_timer(&port->timer, jiffies + msecs_to_jiffies(1)))
 		dev_err(port->device, "mod_timer\n");
 }
@@ -281,6 +280,7 @@ ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf, size_t buf
 ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count)
 {
 	return_val_if_untrue(port, 0);
+
 	if (synccom_port_is_streaming(port))
 		return synccom_port_stream_read(port, buf, count);
 	else
@@ -315,12 +315,8 @@ static void write_data_callback(struct urb *urb)
 
 	port = urb->context;
 	if (urb->status) {
-		if (!(urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET ||
-		    urb->status == -ESHUTDOWN))
-			dev_err(&port->interface->dev,
-				"%s - nonzero write bulk status received: %d\n",
-				__func__, urb->status);
+		if (!(urb->status == -ENOENT || urb->status == -ECONNRESET || urb->status == -ESHUTDOWN))
+			dev_err(&port->interface->dev, "%s - nonzero write bulk status received: %d\n", __func__, urb->status);
 
 		spin_lock(&port->err_lock);
 		port->errors = urb->status;
@@ -340,12 +336,8 @@ static void write_register_callback(struct urb *urb)
 
 	port = urb->context;
 	if (urb->status) {
-		if (!(urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET ||
-		    urb->status == -ESHUTDOWN))
-			dev_err(&port->interface->dev,
-				"%s - nonzero write register bulk status received: %d\n",
-				__func__, urb->status);
+		if (!(urb->status == -ENOENT || urb->status == -ECONNRESET || urb->status == -ESHUTDOWN))
+			dev_err(&port->interface->dev, "%s - nonzero write register bulk status received: %d\n", __func__, urb->status);
 
 		spin_lock(&port->err_lock);
 		port->errors = urb->status;
@@ -370,12 +362,9 @@ static void read_data_callback(struct urb *urb)
 	data_buffer = urb->transfer_buffer;
 
 	if (urb->status) {
-		if (!(urb->status == -ENOENT || // killed, should be resubmitted by someone else
-		    urb->status == -ECONNRESET || // unlinked, should be resubmitted by someone else
-		    urb->status == -ESHUTDOWN)) // config changed or bad, should be resubmitted by someone else
-			dev_err(&port->interface->dev,
-				"%s - nonzero read bulk status received: %d\n",
-				__func__, urb->status);
+		// killed, unlinked, config changed or bad, someone else should resubmit
+		if (!(urb->status == -ENOENT || urb->status == -ECONNRESET || urb->status == -ESHUTDOWN))
+			dev_err(&port->interface->dev, "%s - nonzero read bulk status received: %d\n",	__func__, urb->status);
 
 		spin_lock(&port->err_lock);
 		port->errors = urb->status;
@@ -408,7 +397,7 @@ static void read_data_callback(struct urb *urb)
 	}
 
 	if(synccom_port_get_input_memory_usage(port) + payload > synccom_port_get_input_memory_cap(port)) {
-		printk(KERN_INFO "max mem reached!!!");
+		dev_warn(port->device, "Input memory overflow - discarding data.");
 		usb_submit_urb(urb, GFP_ATOMIC);
 		return;
 	}
@@ -521,14 +510,12 @@ int synccom_port_write_data(struct synccom_port *port, char *data, unsigned byte
 	return usb_submit_urb(write_urb, GFP_ATOMIC);
 }
 
-void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
-								unsigned register_offset, char *data,
-								unsigned byte_count)
+void synccom_port_set_clock(struct synccom_port *port, unsigned bar, unsigned register_offset, char *data, unsigned byte_count)
 {
 
 	unsigned offset = 0;
-    int count;
-    char *msg = NULL;
+  int count;
+  char *msg = NULL;
 
 	return_if_untrue(port);
 	return_if_untrue(bar <= 2);
@@ -543,19 +530,16 @@ void synccom_port_set_clock(struct synccom_port *port, unsigned bar,
 	msg[1] = 0x00;
 	msg[2] = 0x40;
 	msg[3] = data[0];
-    	msg[4] = data[1];
+	msg[4] = data[1];
 	msg[5] = data[2];
 	msg[6] = data[3];
 
-	     usb_bulk_msg(port->udev,
-	     usb_sndbulkpipe(port->udev, 1), msg,
-		 7, &count, HZ*10);
+	usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, 7, &count, HZ*10);
 
 	kfree(msg);
 }
 
-int synccom_port_set_registers(struct synccom_port *port,
-							const struct synccom_registers *regs)
+int synccom_port_set_registers(struct synccom_port *port, const struct synccom_registers *regs)
 {
 	unsigned stalled = 0;
 	unsigned i = 0;
@@ -566,8 +550,7 @@ int synccom_port_set_registers(struct synccom_port *port,
 	for (i = 0; i < sizeof(*regs) / sizeof(synccom_register); i++) {
 		unsigned register_offset = i * 4;
 
-		if (is_read_only_register(register_offset)
-			|| ((synccom_register *)regs)[i] < 0) {
+		if (is_read_only_register(register_offset) || ((synccom_register *)regs)[i] < 0) {
 			continue;
 
 		}
@@ -575,12 +558,9 @@ int synccom_port_set_registers(struct synccom_port *port,
 		if (register_offset <= MAX_OFFSET) {
 			if (synccom_port_set_register(port, 0, register_offset, ((synccom_register *)regs)[i], 1) == -ETIMEDOUT)
 				stalled = 1;
-
 		}
 		else {
-			synccom_port_set_register(port, 2, FCR_OFFSET,
-								   ((synccom_register *)regs)[i], 1);
-
+			synccom_port_set_register(port, 2, FCR_OFFSET, ((synccom_register *)regs)[i], 1);
 		}
 	}
 
@@ -632,6 +612,7 @@ unsigned synccom_port_get_RXCNT(struct synccom_port *port)
        not being larger than 8192. */
 	return min(fifo_bc_value & 0x00003FFF, (__u32)8192);
 }
+
 __u8 synccom_port_get_FREV(struct synccom_port *port)
 {
 	__u32 vstr_value = 0;
@@ -810,20 +791,17 @@ unsigned synccom_port_get_output_memory_cap(struct synccom_port *port)
 	return port->memory_cap.output;
 }
 
-void synccom_port_set_memory_cap(struct synccom_port *port,
-							  struct synccom_memory_cap *value)
+void synccom_port_set_memory_cap(struct synccom_port *port, struct synccom_memory_cap *value)
 {
 	return_if_untrue(port);
 	return_if_untrue(value);
 
 	if (value->input >= 0) {
 		if (port->memory_cap.input != value->input) {
-			dev_dbg(port->device, "memory cap (input) %i => %i\n",
-					port->memory_cap.input, value->input);
+			dev_dbg(port->device, "memory cap (input) %i => %i\n", port->memory_cap.input, value->input);
 		}
 		else {
-			dev_dbg(port->device, "memory cap (input) %i\n",
-					value->input);
+			dev_dbg(port->device, "memory cap (input) %i\n", value->input);
 		}
 
 		port->memory_cap.input = value->input;
@@ -831,12 +809,10 @@ void synccom_port_set_memory_cap(struct synccom_port *port,
 
 	if (value->output >= 0) {
 		if (port->memory_cap.output != value->output) {
-			dev_dbg(port->device, "memory cap (output) %i => %i\n",
-					port->memory_cap.output, value->output);
+			dev_dbg(port->device, "memory cap (output) %i => %i\n", port->memory_cap.output, value->output);
 		}
 		else {
-			dev_dbg(port->device, "memory cap (output) %i\n",
-					value->output);
+			dev_dbg(port->device, "memory cap (output) %i\n", value->output);
 		}
 
 		port->memory_cap.output = value->output;
@@ -846,8 +822,7 @@ void synccom_port_set_memory_cap(struct synccom_port *port,
 #define STRB_BASE 0x00000008
 #define DTA_BASE 0x00000001
 #define CLK_BASE 0x00000002
-void synccom_port_set_clock_bits(struct synccom_port *port,
-							  unsigned char *clock_data)
+void synccom_port_set_clock_bits(struct synccom_port *port, unsigned char *clock_data)
 {
 
 	__u32 orig_fcr_value = 0;
@@ -863,12 +838,11 @@ void synccom_port_set_clock_bits(struct synccom_port *port,
 
 	return_if_untrue(port);
 
-     	clock_data[15] |= 0x04;
+ 	clock_data[15] |= 0x04;
 
 	data = kmalloc(sizeof(__u32) * 323, GFP_KERNEL);
-
 	if (data == NULL) {
-		printk(KERN_ERR DEVICE_NAME "kmalloc failed\n");
+		dev_warn(port->device, "%s: kmalloc failed.", __func__);
 		return;
 	}
 
@@ -933,56 +907,16 @@ int synccom_port_set_append_status(struct synccom_port *port, unsigned value)
 	if (value && synccom_port_is_streaming(port))
 	    return -EOPNOTSUPP;
 
-    if (port->append_status != value) {
-		dev_dbg(port->device, "append status %i => %i", port->append_status,
-		        value);
-    }
-    else {
+  if (port->append_status != value) {
+		dev_dbg(port->device, "append status %i => %i", port->append_status, value);
+  }
+  else {
 		dev_dbg(port->device, "append status = %i", value);
-    }
+  }
 
 	port->append_status = (value) ? 1 : 0;
 
 	return 1;
-}
-
-int synccom_port_set_append_timestamp(struct synccom_port *port, unsigned value)
-{
-
-	    return -EOPNOTSUPP;
-
-}
-
-void synccom_port_set_ignore_timeout(struct synccom_port *port,
-								  unsigned value)
-{
-	return_if_untrue(port);
-
-    if (port->ignore_timeout != value) {
-		dev_dbg(port->device, "ignore timeout %i => %i",
-		        port->ignore_timeout, value);
-    }
-    else {
-		dev_dbg(port->device, "ignore timeout = %i", value);
-    }
-
-	port->ignore_timeout = (value) ? 1 : 0;
-}
-
-void synccom_port_set_rx_multiple(struct synccom_port *port,
-							   unsigned value)
-{
-	return_if_untrue(port);
-
-    if (port->rx_multiple != value) {
-		dev_dbg(port->device, "receive multiple %i => %i",
-		        port->rx_multiple, value);
-    }
-    else {
-		dev_dbg(port->device, "receive multiple = %i", value);
-    }
-
-	port->rx_multiple = (value) ? 1 : 0;
 }
 
 unsigned synccom_port_get_append_status(struct synccom_port *port)
@@ -992,6 +926,12 @@ unsigned synccom_port_get_append_status(struct synccom_port *port)
 	return !synccom_port_is_streaming(port) && port->append_status;
 }
 
+int synccom_port_set_append_timestamp(struct synccom_port *port, unsigned value)
+{
+	// TODO: implement
+	return -EOPNOTSUPP;
+}
+
 unsigned synccom_port_get_append_timestamp(struct synccom_port *port)
 {
 	return_val_if_untrue(port, 0);
@@ -999,11 +939,39 @@ unsigned synccom_port_get_append_timestamp(struct synccom_port *port)
 	return !synccom_port_is_streaming(port) && port->append_timestamp;
 }
 
+void synccom_port_set_ignore_timeout(struct synccom_port *port, unsigned value)
+{
+	return_if_untrue(port);
+
+  if (port->ignore_timeout != value) {
+		dev_dbg(port->device, "ignore timeout %i => %i", port->ignore_timeout, value);
+  }
+  else {
+		dev_dbg(port->device, "ignore timeout = %i", value);
+  }
+
+	port->ignore_timeout = (value) ? 1 : 0;
+}
+
 unsigned synccom_port_get_ignore_timeout(struct synccom_port *port)
 {
 	return_val_if_untrue(port, 0);
 
 	return port->ignore_timeout;
+}
+
+void synccom_port_set_rx_multiple(struct synccom_port *port, unsigned value)
+{
+	return_if_untrue(port);
+
+  if (port->rx_multiple != value) {
+		dev_dbg(port->device, "receive multiple %i => %i", port->rx_multiple, value);
+  }
+  else {
+		dev_dbg(port->device, "receive multiple = %i", value);
+  }
+
+	port->rx_multiple = (value) ? 1 : 0;
 }
 
 unsigned synccom_port_get_rx_multiple(struct synccom_port *port)
@@ -1057,12 +1025,10 @@ int synccom_port_set_tx_modifiers(struct synccom_port *port, int value)
 		case XREP:
 		case XREP|TXT:
 			if (port->tx_modifiers != value) {
-				dev_dbg(port->device, "transmit modifiers 0x%x => 0x%x\n",
-						port->tx_modifiers, value);
+				dev_dbg(port->device, "transmit modifiers 0x%x => 0x%x\n", port->tx_modifiers, value);
 			}
 			else {
-				dev_dbg(port->device, "transmit modifiers 0x%x\n",
-						value);
+				dev_dbg(port->device, "transmit modifiers 0x%x\n", value);
 			}
 
 			port->tx_modifiers = value;
@@ -1070,8 +1036,7 @@ int synccom_port_set_tx_modifiers(struct synccom_port *port, int value)
 			break;
 
 		default:
-			dev_warn(port->device, "tx modifiers (invalid value 0x%x)\n",
-					 value);
+			dev_warn(port->device, "tx modifiers (invalid value 0x%x)\n", value);
 
 			return -EINVAL;
 	}
@@ -1112,8 +1077,7 @@ void synccom_port_execute_transmit(struct synccom_port *port, unsigned dma)
 }
 
 #define TX_FIFO_SIZE 4096
-int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *frame,
-                           unsigned *length)
+int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *frame, unsigned *length)
 {
 	unsigned current_length = 0;
 	unsigned fifo_space = 0;
@@ -1170,21 +1134,18 @@ unsigned synccom_port_transmit_frame(struct synccom_port *port, struct synccom_f
 
 void program_synccom(struct synccom_port *port, char *line)
 {
-
 	 int count;
 	 char *msg = NULL;
 	 int i;
 	 msg = kmalloc(50, GFP_KERNEL);
 	 msg[0] = 0x06;
 
-	 for(i = 0; line[i] != 13; i++)
-	 {
-		 msg[i+1] = line[i];
-	 }
+	for(i = 0; line[i] != 13; i++)
+	{
+		msg[i+1] = line[i];
+	}
 
-	  usb_bulk_msg(port->udev,
-	        usb_sndbulkpipe(port->udev, 1), msg,
-		    i + 1, &count, HZ*10);
+  usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, i + 1, &count, HZ*10);
 
 	kfree(msg);
 }
@@ -1198,9 +1159,6 @@ void timer_handler(struct timer_list *t)
 {
 	struct synccom_port *port = from_timer(port, t, timer);
 #endif
-	// for loop
-	//usb_submit_urb(read_urb, GFP_ATOMIC);
-
 	tasklet_schedule(&port->send_oframe_tasklet);
 }
 
