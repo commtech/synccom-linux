@@ -96,6 +96,8 @@ THE SOFTWARE.
 #define CE_BIT 0x00040000
 
 
+#define NUMBER_OF_URBS 8
+#define URB_BUFFER_SIZE 512
 
 struct synccom_port {
 	struct list_head list;
@@ -107,11 +109,6 @@ struct synccom_port {
 	unsigned channel;
 	char *name;
 
-
-
-	struct synccom_descriptor *null_descriptor;
-	dma_addr_t null_handle;
-
 	/* Prevents simultaneous read(), write() and poll() calls. */
 	struct semaphore read_semaphore;
 	struct semaphore write_semaphore;
@@ -122,8 +119,8 @@ struct synccom_port {
 
 
 	struct synccom_flist queued_iframes; /* Frames already retrieved from the FIFO */
+	struct synccom_flist pending_iframes;
 	struct synccom_flist queued_oframes; /* Frames not yet in the FIFO yet */
-	struct synccom_flist sent_oframes; /* Frames sent but not yet cleared */
 
 	struct synccom_frame *pending_iframe; /* Frame retrieving from the FIFO */
 	struct synccom_frame *pending_oframe; /* Frame being put in the FIFO */
@@ -150,11 +147,13 @@ struct synccom_port {
 	spinlock_t istream_spinlock;
 	spinlock_t pending_iframe_spinlock;
 	spinlock_t pending_oframe_spinlock;
-	spinlock_t sent_oframes_spinlock;
 	spinlock_t queued_oframes_spinlock;
 	spinlock_t queued_iframes_spinlock;
+	spinlock_t pending_iframes_spinlock;
 	spinlock_t register_concurrency_spinlock;
-
+	struct mutex io_mutex;		/* synchronize I/O with disconnect */
+	struct mutex running_bc_mutex;
+	struct mutex register_access_mutex;
 
 	bool frame_counter_status;
 	struct synccom_memory_cap memory_cap;
@@ -172,14 +171,8 @@ struct synccom_port {
 	struct usb_interface	*interface;		/* the interface for this device */
 	struct semaphore	limit_sem;		/* limiting the number of writes in progress */
 	struct usb_anchor	submitted;		/* in case we need to retract our submissions */
-	struct urb		*bulk_in_urb;		/* the urb to read data with */
-	struct urb		*bulk_in_urb2;
-	struct urb		*bulk_in_urb3;
-	struct urb		*bulk_in_urb4;
-	unsigned char   *bulk_in_buffer2;
-	unsigned char   *bulk_in_buffer3;
-	unsigned char   *bulk_in_buffer4;
-	unsigned char   *bulk_in_buffer;
+	struct urb							**bulk_in_urbs;
+	unsigned char						**bulk_in_buffers;
 
 		/* the buffer to receive data */
 	size_t			bulk_in_size;		/* the size of the receive buffer */
@@ -192,16 +185,7 @@ struct synccom_port {
 	bool			ongoing_read;		/* a read is going on */
 	spinlock_t		err_lock;		/* lock for errors */
 	struct kref		kref;
-	struct mutex	io_mutex;		/* synchronize I/O with disconnect */
-	struct mutex    running_bc_mutex;
-	struct mutex    register_access_mutex;
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
-
-    unsigned char *masterbuf;
-	unsigned int *bc_buffer;
-	int mbsize;
-	int running_frame_count;
-
 
 #ifdef DEBUG
 	struct debug_interrupt_tracker *interrupt_tracker;
@@ -314,12 +298,10 @@ void synccom_port_execute_transmit(struct synccom_port *port, unsigned dma);
 
 void synccom_port_reset_timer(struct synccom_port *port);
 unsigned synccom_port_transmit_frame(struct synccom_port *port, struct synccom_frame *frame);
-__u32 synccom_port_cont_read(struct synccom_port *port, unsigned bar,
-							 unsigned register_offset);
-__u32 synccom_port_cont_read2(struct synccom_port *port);
-__u32 synccom_port_cont_read3(struct synccom_port *port);
-__u32 synccom_port_cont_read4(struct synccom_port *port);
+__u32 synccom_port_cont_read(struct synccom_port *port, struct urb *read_urb, unsigned char *data_buffer, u32 size);
 void oframe_worker(unsigned long data);
+int synccom_port_create_urbs(struct synccom_port *port);
+int synccom_port_destroy_urbs(struct synccom_port *port);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 void timer_handler(unsigned long data);
