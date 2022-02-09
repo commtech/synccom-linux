@@ -26,10 +26,10 @@ THE SOFTWARE.
 #include <linux/pci.h>
 
 struct synccom_descriptor {
-	uint32_t control;
-	uint32_t data_address;
-	uint32_t data_count;
-	uint32_t next_descriptor;
+  uint32_t control;
+  uint32_t data_address;
+  uint32_t data_count;
+  uint32_t next_descriptor;
 };
 
 #endif

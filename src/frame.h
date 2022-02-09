@@ -23,10 +23,9 @@ THE SOFTWARE.
 #ifndef SYNCCOM_FRAME_H
 #define SYNCCOM_FRAME_H
 
-#include <linux/version.h>
-#include <linux/list.h> /* struct list_head */
 #include "descriptor.h" /* struct synccom_descriptor */
-
+#include <linux/list.h> /* struct list_head */
+#include <linux/version.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 typedef struct timespec64 synccom_timestamp;
@@ -34,17 +33,16 @@ typedef struct timespec64 synccom_timestamp;
 typedef struct timeval synccom_timestamp;
 #endif
 
-
 struct synccom_frame {
-	struct list_head list;
-	char *buffer;
-	unsigned data_length;
-	unsigned buffer_size;
-	unsigned frame_size;
-	unsigned lost_bytes;
-	unsigned number;
-	synccom_timestamp timestamp;
-	struct synccom_port *port;
+  struct list_head list;
+  char *buffer;
+  unsigned data_length;
+  unsigned buffer_size;
+  unsigned frame_size;
+  unsigned lost_bytes;
+  unsigned number;
+  synccom_timestamp timestamp;
+  struct synccom_port *port;
 };
 
 struct synccom_frame *synccom_frame_new(struct synccom_port *port);
@@ -52,10 +50,14 @@ void synccom_frame_delete(struct synccom_frame *frame);
 unsigned synccom_frame_get_length(struct synccom_frame *frame);
 unsigned synccom_frame_get_buffer_size(struct synccom_frame *frame);
 unsigned synccom_frame_get_frame_size(struct synccom_frame *frame);
-int synccom_frame_add_data(struct synccom_frame *frame, const char *data, unsigned length);
-int synccom_frame_add_data_from_user(struct synccom_frame *frame, const char *data, unsigned length);
-int synccom_frame_remove_data(struct synccom_frame *frame, char *destination, unsigned length);
-int synccom_frame_transfer_data(struct synccom_frame *destination, struct synccom_frame *source, unsigned length);
+int synccom_frame_add_data(struct synccom_frame *frame, const char *data,
+                           unsigned length);
+int synccom_frame_add_data_from_user(struct synccom_frame *frame,
+                                     const char *data, unsigned length);
+int synccom_frame_remove_data(struct synccom_frame *frame, char *destination,
+                              unsigned length);
+int synccom_frame_transfer_data(struct synccom_frame *destination,
+                                struct synccom_frame *source, unsigned length);
 unsigned synccom_frame_is_empty(struct synccom_frame *frame);
 void synccom_frame_clear(struct synccom_frame *frame);
 void update_bc_buffer(struct synccom_port *dev);
