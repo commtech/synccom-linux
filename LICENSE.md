@@ -1,4 +1,4 @@
-Copyright 2020 Commtech, Inc.
+Copyright 2022 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy 
 of this software and associated documentation files (the "Software"), to deal 
