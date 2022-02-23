@@ -200,6 +200,7 @@ int synccom_port_write(struct synccom_port *port, const char *data,
 
   synccom_frame_add_data_from_user(frame, data, length);
   frame->frame_size = length;
+
   spin_lock_irqsave(&port->queued_oframes_spinlock, queued_flags);
   synccom_flist_add_frame(&port->queued_oframes, frame);
   spin_unlock_irqrestore(&port->queued_oframes_spinlock, queued_flags);
@@ -355,6 +356,7 @@ static void read_data_callback(struct urb *urb) {
   unsigned char temp = 0;
   unsigned char *data_buffer = 0;
   unsigned long istream_flags = 0;
+  static unsigned char errorcheck1=0, errorcheck2=0;
 
   port = urb->context;
   data_buffer = urb->transfer_buffer;
@@ -385,18 +387,23 @@ static void read_data_callback(struct urb *urb) {
   }
   payload = data_buffer[0] << 8;
   payload |= data_buffer[1];
-  dev_dbg(port->device, "Received data: %ld bytes, transfer_size: %d", payload,
-          transfer_size);
-  if (payload > transfer_size - 2) {
-    // There's a bug where for some reason sometimes the first
-    // two bytes of the buffer are a repeat of the last two of a previous
-    // read, instead of the payload size.
-    // This does not work. What if the byte is 0x01 0x01?
-    // The bad payload issue needs to be resolved.
-    payload = transfer_size - 2;
-    dev_dbg(port->device,
-            "Using transfer size instead because payload is broken.");
+  if(errorcheck1 == data_buffer[0]
+    && errorcheck2 == data_buffer[1]
+    && errorcheck1 == errorcheck2) {
+      // There's a bug where for some reason sometimes the first
+      // two bytes of the buffer are a repeat of the last two of a previous
+      // read, instead of the payload size.
+      // For now, we're saving the last two bytes of every chunk of received
+      // data, and comparing it to the first two bytes. It's not perfect.
+      // This needs to be resolved in the firmware.
+      dev_warn(port->device,
+        "Payload wrong, using buffer_size! Payload: %ld, Size: %d",
+        payload, transfer_size);
+      payload = transfer_size - 2;
   }
+
+  errorcheck1 = data_buffer[transfer_size-1];
+  errorcheck2 = data_buffer[transfer_size-2];
 
   if (synccom_port_get_input_memory_usage(port) + payload >
       synccom_port_get_input_memory_cap(port)) {
@@ -510,11 +517,16 @@ int synccom_port_write_data(struct synccom_port *port, char *data,
   return_val_if_untrue(byte_count > 0, -1);
 
   write_urb = usb_alloc_urb(0, GFP_ATOMIC);
-  if (!write_urb)
+  if (!write_urb) {
+    dev_dbg(port->device, "%s: Couldn't alloc urb!", __func__);
     return -1;
+  }
   urb_buffer = kmalloc(byte_count, GFP_ATOMIC);
-  if (!urb_buffer)
+  if (!urb_buffer) {
+    dev_dbg(port->device, "%s: Couldn't alloc buffer!", __func__);
+    usb_free_urb(write_urb);
     return -1;
+  }
 
   memcpy(urb_buffer, data, byte_count);
   dev_dbg(port->device, "Attempting to write %d bytes.", byte_count);
@@ -1083,16 +1095,14 @@ int prepare_frame_for_fifo(struct synccom_port *port,
   frame_size = synccom_frame_get_frame_size(frame);
   fifo_space = TX_FIFO_SIZE - 1;
   fifo_space -= fifo_space % 4;
-
   /* Determine the maximum amount of data we can send this time around. */
   transmit_length = (size_in_fifo > fifo_space) ? fifo_space : size_in_fifo;
 
   if (transmit_length < 1)
     return 0;
 
-  synccom_port_write_data(port, frame->buffer, transmit_length);
-
-  synccom_frame_remove_data(frame, NULL, transmit_length);
+  if(synccom_port_write_data(port, frame->buffer, transmit_length)==0)
+    synccom_frame_remove_data(frame, NULL, transmit_length);
 
   *length = transmit_length;
 
@@ -1153,7 +1163,7 @@ void timer_handler(struct timer_list *t) {
 
 void oframe_worker(unsigned long data) {
   struct synccom_port *port = 0;
-  int result;
+  int result = 0;
 
   unsigned long board_flags = 0;
   unsigned long frame_flags = 0;

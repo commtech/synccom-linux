@@ -176,6 +176,7 @@ int synccom_frame_transfer_data(struct synccom_frame *destination,
 int synccom_frame_remove_data(struct synccom_frame *frame, char *destination,
                               unsigned length) {
   unsigned untransferred_bytes = 0;
+  unsigned removal_length = length;
 
   return_val_if_untrue(frame, 0);
 
@@ -188,24 +189,19 @@ int synccom_frame_remove_data(struct synccom_frame *frame, char *destination,
     return 1;
   }
 
-  /* Make sure we don't remove more data than we have */
-  if (length > frame->data_length) {
-    dev_warn(frame->port->device,
-             "%s - attempting removal of more data than available\n", __func__);
-    return 0;
-  }
+  removal_length = min(removal_length, frame->data_length);
 
   /* Copy the data into the outside buffer */
   if (destination)
-    untransferred_bytes = copy_to_user(destination, frame->buffer, length);
+    untransferred_bytes = copy_to_user(destination, frame->buffer, removal_length);
 
   if (untransferred_bytes > 0)
     return 0;
 
-  frame->data_length -= length;
+  frame->data_length -= removal_length;
 
   /* Move the data up in the buffer (essentially removing the old data) */
-  memmove(frame->buffer, frame->buffer + length, frame->data_length);
+  memmove(frame->buffer, frame->buffer + removal_length, frame->data_length);
 
   return 1;
 }
@@ -218,6 +214,7 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame,
                                      unsigned size) {
   char *new_buffer = 0;
   int malloc_flags = 0;
+  unsigned four_aligned = 0;
 
   return_val_if_untrue(frame, 0);
 
@@ -233,17 +230,17 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame,
     return 1;
   }
 
+  four_aligned = ((size % 4)==0) ? size : size + (4 - (size % 4));
   malloc_flags |= GFP_ATOMIC;
 
-  new_buffer = kmalloc(size, malloc_flags);
-
+  new_buffer = kmalloc(four_aligned, malloc_flags);
   if (new_buffer == NULL) {
     dev_err(frame->port->device,
             "%s - not enough memory to update frame buffer size\n", __func__);
     return 0;
   }
 
-  memset(new_buffer, 0, size);
+  memset(new_buffer, 0, four_aligned);
 
   if (frame->buffer) {
     if (frame->data_length) {
@@ -259,7 +256,7 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame,
   }
 
   frame->buffer = new_buffer;
-  frame->buffer_size = size;
+  frame->buffer_size = four_aligned;
 
   return 1;
 }
