@@ -47,6 +47,7 @@ int initialize(struct synccom_port *port) {
 
   sema_init(&port->write_semaphore, 1);
   sema_init(&port->read_semaphore, 1);
+  sema_init(&port->poll_semaphore, 1);
 
   init_waitqueue_head(&port->input_queue);
   init_waitqueue_head(&port->output_queue);

@@ -31,6 +31,7 @@ THE SOFTWARE.
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/usb.h>
+#include <linux/poll.h>
 
 /* Define these values to match your devices */
 #define SYNCCOM_VENDOR_ID 0x2eb0
@@ -141,6 +142,28 @@ static int synccom_flush(struct file *file, fl_owner_t id) {
   mutex_unlock(&port->io_mutex);
 
   return res;
+}
+
+
+unsigned synccom_poll(struct file *file, struct poll_table_struct *wait) {
+  struct synccom_port *port = 0;
+  unsigned mask = 0;
+
+  port = file->private_data;
+  down_interruptible(&port->poll_semaphore);
+
+  poll_wait(file, &port->input_queue, wait);
+  poll_wait(file, &port->output_queue, wait);
+
+  if(synccom_port_has_incoming_data(port))
+    mask |= POLLIN | POLLRDNORM;
+
+  if(synccom_port_get_output_memory_usage(port) < synccom_port_get_output_memory_cap(port))
+    mask |= POLLOUT | POLLWRNORM;
+
+  up(&port->poll_semaphore);
+
+  return mask;
 }
 
 static ssize_t synccom_read(struct file *file, char *buf, size_t count,
@@ -382,6 +405,7 @@ static const struct file_operations synccom_fops = {
     .flush = synccom_flush,
     //.llseek =	noop_llseek,
     .unlocked_ioctl = synccom_ioctl,
+    .poll = synccom_poll,
 
 };
 

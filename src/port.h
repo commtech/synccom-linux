@@ -110,6 +110,7 @@ struct synccom_port {
   /* Prevents simultaneous read(), write() and poll() calls. */
   struct semaphore read_semaphore;
   struct semaphore write_semaphore;
+  struct semaphore poll_semaphore;
 
   wait_queue_head_t input_queue;
   wait_queue_head_t output_queue;
