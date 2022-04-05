@@ -1,5 +1,5 @@
 /*
-Copyright 2022 Commtech, Inc.
+Copyright 2020 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -209,7 +209,8 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count);
 unsigned synccom_port_has_iframes(struct synccom_port *port, unsigned lock);
 unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 
-__u32 synccom_port_get_register(struct synccom_port *port, unsigned bar, unsigned register_offset, int need_lock);
+__u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
+							 unsigned register_offset, int need_lock);
 
 __u32 syncom_update_frames(struct synccom_port *port);
 
@@ -217,9 +218,12 @@ __u32 syncom_update_frames(struct synccom_port *port);
 //							 unsigned register_offset);
 
 
-int synccom_port_set_register(struct synccom_port *port, unsigned bar, unsigned register_offset, __u32 value, int need_lock);
+int synccom_port_set_register(struct synccom_port *port, unsigned bar,
+							unsigned register_offset, __u32 value,
+							int need_lock);
 
-int synccom_port_send_data(struct synccom_port *port, char *data, unsigned byte_count);
+int synccom_port_send_data(struct synccom_port *port, char *data,
+								unsigned byte_count);
 
 int synccom_port_purge_tx(struct synccom_port *port);
 int synccom_port_purge_rx(struct synccom_port *port);
@@ -242,15 +246,19 @@ unsigned synccom_port_get_input_memory_usage(struct synccom_port *port);
 unsigned synccom_port_get_input_memory_cap(struct synccom_port *port);
 unsigned synccom_port_get_output_memory_cap(struct synccom_port *port);
 
-void synccom_port_set_memory_cap(struct synccom_port *port, struct synccom_memory_cap *memory_cap);
+void synccom_port_set_memory_cap(struct synccom_port *port,
+							  struct synccom_memory_cap *memory_cap);
 
-void synccom_port_set_ignore_timeout(struct synccom_port *port, unsigned ignore_timeout);
+void synccom_port_set_ignore_timeout(struct synccom_port *port,
+								  unsigned ignore_timeout);
 unsigned synccom_port_get_ignore_timeout(struct synccom_port *port);
 
-void synccom_port_set_rx_multiple(struct synccom_port *port, unsigned rx_multiple);
+void synccom_port_set_rx_multiple(struct synccom_port *port,
+								  unsigned rx_multiple);
 unsigned synccom_port_get_rx_multiple(struct synccom_port *port);
 
-void synccom_port_set_clock_bits(struct synccom_port *port, unsigned char *clock_data);
+void synccom_port_set_clock_bits(struct synccom_port *port,
+							  unsigned char *clock_data);
 
 int synccom_port_set_append_status(struct synccom_port *port, unsigned value);
 unsigned synccom_port_get_append_status(struct synccom_port *port);
@@ -258,11 +266,14 @@ unsigned synccom_port_get_append_status(struct synccom_port *port);
 int synccom_port_set_append_timestamp(struct synccom_port *port, unsigned value);
 unsigned synccom_port_get_append_timestamp(struct synccom_port *port);
 
-int synccom_port_set_registers(struct synccom_port *port, const struct synccom_registers *regs);
+int synccom_port_set_registers(struct synccom_port *port,
+							 const struct synccom_registers *regs);
 
-void synccom_port_get_registers(struct synccom_port *port, struct synccom_registers *regs);
+void synccom_port_get_registers(struct synccom_port *port,
+							 struct synccom_registers *regs);
 
-struct synccom_frame *synccom_port_peek_front_frame(struct synccom_port *port, struct list_head *frames);
+struct synccom_frame *synccom_port_peek_front_frame(struct synccom_port *port,
+											  struct list_head *frames);
 
 unsigned synccom_port_using_async(struct synccom_port *port);
 unsigned synccom_port_is_streaming(struct synccom_port *port);
@@ -277,7 +288,8 @@ void synccom_port_execute_RST_T(struct synccom_port *port);
 
 #ifdef DEBUG
 unsigned synccom_port_get_interrupt_count(struct synccom_port *port, __u32 isr_bit);
-void synccom_port_increment_interrupt_counts(struct synccom_port *port, __u32 isr_value);
+void synccom_port_increment_interrupt_counts(struct synccom_port *port,
+										  __u32 isr_value);
 #endif /* DEBUG */
 
 int synccom_port_set_tx_modifiers(struct synccom_port *port, int tx_modifiers);
