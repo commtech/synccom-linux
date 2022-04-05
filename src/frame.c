@@ -1,5 +1,5 @@
 /*
-Copyright 2022 Commtech, Inc.
+Copyright 2020 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,7 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame, unsigned lengt
 
 struct synccom_frame *synccom_frame_new(struct synccom_port *port)
 {
+
 	struct synccom_frame *frame = 0;
 
 	frame = kmalloc(sizeof(*frame), GFP_ATOMIC);
@@ -59,6 +60,7 @@ struct synccom_frame *synccom_frame_new(struct synccom_port *port)
 void synccom_frame_delete(struct synccom_frame *frame)
 {
 	return_if_untrue(frame);
+
 
 	synccom_frame_update_buffer_size(frame, 0);
 
@@ -93,7 +95,8 @@ unsigned synccom_frame_is_empty(struct synccom_frame *frame)
 	return frame->data_length == 0;
 }
 
-int synccom_frame_add_data(struct synccom_frame *frame, const char *data, unsigned length)
+int synccom_frame_add_data(struct synccom_frame *frame, const char *data,
+						 unsigned length)
 {
 	return_val_if_untrue(frame, 0);
 	return_val_if_untrue(length > 0, 0);
@@ -113,7 +116,8 @@ int synccom_frame_add_data(struct synccom_frame *frame, const char *data, unsign
 	return 1;
 }
 
-int synccom_frame_add_data_from_user(struct synccom_frame *frame, const char *data, unsigned length)
+int synccom_frame_add_data_from_user(struct synccom_frame *frame, const char *data,
+						 unsigned length)
 {
 	unsigned uncopied_bytes = 0;
 
@@ -147,18 +151,18 @@ int synccom_frame_transfer_data(struct synccom_frame *destination, struct syncco
 		return 1;
 
 	if (source->data_length == 0) {
-			dev_warn(source->port->device, "%s - attempting data removal from empty frame\n", __func__);
+			dev_warn(source->port->device, "attempting data removal from empty frame\n");
 			return 1;
 	}
 
 	if (length > source->data_length) {
-		dev_warn(source->port->device, "%s - attempting removal of more data than available\n", __func__);
+		dev_warn(source->port->device, "attempting removal of more data than available\n");
 		return 0;
 	}
 
 	new_buffer = kmalloc(length, GFP_ATOMIC);
 	if(!new_buffer) {
-		dev_warn(source->port->device, "%s - failed to create new_buffer\n", __func__);
+		dev_warn(source->port->device, "failed to create new_buffer\n");
 		return 0;
 	}
 
@@ -172,7 +176,8 @@ int synccom_frame_transfer_data(struct synccom_frame *destination, struct syncco
 	return 1;
 }
 
-int synccom_frame_remove_data(struct synccom_frame *frame, char *destination, unsigned length)
+int synccom_frame_remove_data(struct synccom_frame *frame, char *destination,
+							unsigned length)
 {
 	unsigned untransferred_bytes = 0;
 
@@ -182,13 +187,13 @@ int synccom_frame_remove_data(struct synccom_frame *frame, char *destination, un
 		return 1;
 
 	if (frame->data_length == 0) {
-		dev_warn(frame->port->device, "%s - attempting data removal from empty frame\n", __func__);
+		dev_warn(frame->port->device, "attempting data removal from empty frame\n");
 		return 1;
 	}
 
 	/* Make sure we don't remove more data than we have */
 	if (length > frame->data_length) {
-		dev_warn(frame->port->device, "%s - attempting removal of more data than available\n", __func__);
+		dev_warn(frame->port->device, "attempting removal of more data than available\n");
 		return 0;
 	}
 
@@ -200,6 +205,7 @@ int synccom_frame_remove_data(struct synccom_frame *frame, char *destination, un
    	 	return 0;
 
 	frame->data_length -= length;
+
 
 	/* Move the data up in the buffer (essentially removing the old data) */
 	memmove(frame->buffer, frame->buffer + length, frame->data_length);
@@ -236,7 +242,7 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame, unsigned size)
 	new_buffer = kmalloc(size, malloc_flags);
 
 	if (new_buffer == NULL) {
-		dev_err(frame->port->device, "%s - not enough memory to update frame buffer size\n", __func__);
+		dev_err(frame->port->device, "not enough memory to update frame buffer size\n");
 		return 0;
 	}
 
@@ -297,7 +303,7 @@ void update_bc_buffer(struct synccom_port *port)
 		}
 		if(synccom_frame_get_length(port->istream) < (frame->frame_size - frame->lost_bytes)) break;
 		frame = synccom_flist_remove_frame(&port->pending_iframes);
-		synccom_frame_transfer_data(frame, port->istream, (frame->frame_size - frame->lost_bytes));
+		synccom_frame_transfer_data(frame, port->istream, (frame->frame_size - frame->lost_bytes)); // TODO remove above and verify this
 		//append_timestamp
 		dev_dbg(port->device, "F#%d <=: %d, data: %d", frame->number, frame->frame_size, frame->data_length);
 		spin_lock_irqsave(&port->queued_iframes_spinlock, queued_flags);

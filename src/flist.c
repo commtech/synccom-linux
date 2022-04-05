@@ -1,5 +1,5 @@
 /*
-Copyright 2022 Commtech, Inc.
+Copyright 2020 Commtech, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@ THE SOFTWARE.
 
 void synccom_flist_init(struct synccom_flist *flist)
 {
+
 	INIT_LIST_HEAD(&flist->frames);
 
 	flist->estimated_memory_usage = 0;
@@ -43,7 +44,10 @@ void synccom_flist_delete(struct synccom_flist *flist)
 
 void synccom_flist_add_frame(struct synccom_flist *flist, struct synccom_frame *frame)
 {
+
+
 	list_add_tail(&frame->list, &flist->frames);
+
 
 	flist->estimated_memory_usage += synccom_frame_get_length(frame);
 }
@@ -70,6 +74,7 @@ struct synccom_frame *synccom_flist_remove_frame(struct synccom_flist *flist)
 	struct synccom_frame *frame = 0;
 
 	if (list_empty(&flist->frames))
+
 		return 0;
 
 	frame = list_first_entry(&flist->frames, struct synccom_frame, list);
@@ -81,8 +86,10 @@ struct synccom_frame *synccom_flist_remove_frame(struct synccom_flist *flist)
 	return frame;
 }
 
-struct synccom_frame *synccom_flist_remove_frame_if_lte(struct synccom_flist *flist, unsigned size)
+struct synccom_frame *synccom_flist_remove_frame_if_lte(struct synccom_flist *flist,
+                                                  unsigned size)
 {
+
 	struct synccom_frame *frame = 0;
 	unsigned frame_length = 0;
 
