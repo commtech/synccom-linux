@@ -66,8 +66,18 @@ static void synccom_delete(struct kref *kref)
 {
 	struct synccom_port *port = to_synccom_dev(kref);
 
-	synccom_port_destroy_urbs(port);
+	usb_free_urb(port->bulk_in_urb);
+	usb_free_urb(port->bulk_in_urb2);
+	usb_free_urb(port->bulk_in_urb3);
+	usb_free_urb(port->bulk_in_urb4);
+
+
 	usb_put_dev(port->udev);
+
+	kfree(port->bulk_in_buffer);
+	kfree(port->bulk_in_buffer2);
+	kfree(port->bulk_in_buffer3);
+	kfree(port->bulk_in_buffer4);
 	kfree(port);
 }
 
@@ -135,7 +145,6 @@ static int synccom_flush(struct file *file, fl_owner_t id)
 {
 	struct synccom_port *port;
 	int res;
-	unsigned long err_flags = 0;
 
 	port = file->private_data;
 	if (port == NULL)
@@ -146,15 +155,16 @@ static int synccom_flush(struct file *file, fl_owner_t id)
 	synccom_draw_down(port);
 
 	/* read out errors, leave subsequent opens a clean slate */
-	spin_lock_irqsave(&port->err_lock, err_flags);
+	spin_lock_irq(&port->err_lock);
 	res = port->errors ? (port->errors == -EPIPE ? -EPIPE : -EIO) : 0;
 	port->errors = 0;
-	spin_unlock_irqrestore(&port->err_lock, err_flags);
+	spin_unlock_irq(&port->err_lock);
 
 	mutex_unlock(&port->io_mutex);
 
 	return res;
 }
+
 
 static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 			 loff_t *ppos)
@@ -171,13 +181,16 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 	if (down_interruptible(&port->read_semaphore))
 		return -ERESTARTSYS;
 
+
+
 	while (!synccom_port_has_incoming_data(port)) {
 		up(&port->read_semaphore);
 
 		if (file->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
-		if (wait_event_interruptible(port->input_queue, synccom_port_has_incoming_data(port))) {
+		if (wait_event_interruptible(port->input_queue,
+									 synccom_port_has_incoming_data(port))) {
 			return -ERESTARTSYS;
 		}
 
@@ -185,12 +198,15 @@ static ssize_t synccom_read(struct file *file, char *buf, size_t count,
 			return -ERESTARTSYS;
 	}
 
+
 	read_count = synccom_port_read(port, buf, count);
 
 	up(&port->read_semaphore);
 
 	return read_count;
 }
+
+
 
 static ssize_t synccom_write(struct file *file, const char *buf,
 			  size_t count, loff_t *ppos)
@@ -232,7 +248,7 @@ static ssize_t synccom_write(struct file *file, const char *buf,
 
 	return (error_code < 0) ? error_code : count;
 }
-
+/******************************************************/
 long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 
@@ -407,6 +423,7 @@ static int synccom_probe(struct usb_interface *interface,
 		      const struct usb_device_id *id)
 {
 	struct synccom_port *port;
+
 	struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
 	size_t buffer_size;
@@ -428,30 +445,50 @@ static int synccom_probe(struct usb_interface *interface,
 
 	port->udev = usb_get_dev(interface_to_usbdev(interface));
 	port->interface = interface;
-	port->device = &port->udev->dev;
 
+	/* set up the endpoint information */
+	/* use only the first bulk-in and bulk-out endpoints */
 	iface_desc = interface->cur_altsetting;
 	for (i = 0; i < iface_desc->desc.bNumEndpoints; ++i) {
 		endpoint = &iface_desc->endpoint[i].desc;
 
-		if (!port->bulk_in_endpointAddr && usb_endpoint_is_bulk_in(endpoint)) {
+		if (!port->bulk_in_endpointAddr &&
+		    usb_endpoint_is_bulk_in(endpoint)) {
+			/* we found a bulk in endpoint */
 			buffer_size = endpoint->wMaxPacketSize;
-			port->bulk_in_size = buffer_size;
+						port->bulk_in_size = buffer_size;
 			port->bulk_in_endpointAddr = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_in_endpointAddr);
+			port->bulk_in_buffer = kmalloc(buffer_size, GFP_KERNEL);
+			if (!port->bulk_in_buffer) {
+				dev_err(&interface->dev,
+					"Could not allocate bulk_in_buffer\n");
+				goto error;
+			}
+			port->bulk_in_urb = usb_alloc_urb(0, GFP_KERNEL);
+			if (!port->bulk_in_urb) {
+				dev_err(&interface->dev,
+					"Could not allocate bulk_in_urb\n");
+				goto error;
+			}
 		}
-		if (!port->bulk_out_endpointAddr && usb_endpoint_is_bulk_out(endpoint)) {
+
+		if (!port->bulk_out_endpointAddr &&
+		    usb_endpoint_is_bulk_out(endpoint)) {
+			/* we found a bulk out endpoint */
 			port->bulk_out_endpointAddr = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_out_endpointAddr);
+
 		}
-		if (port->bulk_out_endpointAddr && usb_endpoint_is_bulk_out(endpoint)) {
+
+                if (port->bulk_out_endpointAddr &&
+		    usb_endpoint_is_bulk_out(endpoint)) {
+			/* we found a bulk out endpoint */
 			port->bulk_out_endpointAddr2 = endpoint->bEndpointAddress;
-			dev_dbg(port->device, "Endpoint found: 0x%2.2x", port->bulk_out_endpointAddr2);
 		}
 
 	}
 	if (!(port->bulk_in_endpointAddr && port->bulk_out_endpointAddr)) {
-		dev_err(&interface->dev, "Could not find both bulk-in and bulk-out endpoints\n");
+		dev_err(&interface->dev,
+			"Could not find both bulk-in and bulk-out endpoints\n");
 		goto error;
 	}
 
@@ -462,13 +499,16 @@ static int synccom_probe(struct usb_interface *interface,
 	retval = usb_register_dev(interface, &synccom_class);
 	if (retval) {
 		/* something prevented us from registering this driver */
-		dev_err(&interface->dev, "Not able to get a minor for this device.\n");
+		dev_err(&interface->dev,
+			"Not able to get a minor for this device.\n");
 		usb_set_intfdata(interface, NULL);
 		goto error;
 	}
 
 	/* let the user know what node this device is now attached to */
-	dev_info(&interface->dev, "USB synccom device now attached to synccom%d\n", interface->minor);
+	dev_info(&interface->dev,
+		 "USB synccom device now attached to synccom%d\n",
+		 interface->minor);
 
 	initialize(port);
 
@@ -506,6 +546,7 @@ static void synccom_disconnect(struct usb_interface *interface)
 
 	dev_info(&interface->dev, "USB synccom #%d now disconnected", minor);
 }
+
 
 static void synccom_draw_down(struct synccom_port *port)
 {
