@@ -191,6 +191,8 @@ unsigned synccom_port_has_oframes(struct synccom_port *port, unsigned lock);
 
 __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
                                 unsigned register_offset, int need_lock);
+
+__u32 syncom_update_frames(struct synccom_port *port);
 int synccom_port_set_register(struct synccom_port *port, unsigned bar,
                               unsigned register_offset, __u32 value,
                               int need_lock);
@@ -261,6 +263,8 @@ void synccom_port_execute_transmit(struct synccom_port *port, unsigned dma);
 void synccom_port_reset_timer(struct synccom_port *port);
 unsigned synccom_port_transmit_frame(struct synccom_port *port,
                                      struct synccom_frame *frame);
+__u32 synccom_port_cont_read(struct synccom_port *port, struct urb *read_urb,
+                             unsigned char *data_buffer, u32 size);
 void oframe_worker(unsigned long data);
 int synccom_port_create_urbs(struct synccom_port *port);
 int synccom_port_destroy_urbs(struct synccom_port *port);
