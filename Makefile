@@ -2,7 +2,7 @@ obj-m := synccom.o
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD	:= $(shell pwd)
 IGNORE :=
-synccom-objs := src/main.o src/port.o src/utils.o \
+synccom-objs := src/synccommain.o src/port.o src/utils.o \
              src/frame.o src/sysfs.o src/descriptor.o src/debug.o \
              src/flist.o
 
