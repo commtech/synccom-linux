@@ -26,47 +26,44 @@ THE SOFTWARE.
 #include <linux/module.h> /* __u32 */
 
 struct debug_interrupt_tracker {
-  unsigned rfs;
-  unsigned rft;
-  unsigned rfe;
-  unsigned rfo;
-  unsigned rdo;
-  unsigned rfl;
+	unsigned rfs;
+	unsigned rft;
+	unsigned rfe;
+	unsigned rfo;
+	unsigned rdo;
+	unsigned rfl;
 
-  unsigned reserved1[2];
+	unsigned reserved1[2];
 
-  unsigned tin;
+	unsigned tin;
 
-  unsigned reserved2[1];
+	unsigned reserved2[1];
 
-  unsigned dr_hi;
-  unsigned dt_hi;
-  unsigned dr_fe;
-  unsigned dt_fe;
-  unsigned dr_stop;
-  unsigned dt_stop;
+	unsigned dr_hi;
+	unsigned dt_hi;
+	unsigned dr_fe;
+	unsigned dt_fe;
+	unsigned dr_stop;
+	unsigned dt_stop;
 
-  unsigned tft;
-  unsigned alls;
-  unsigned tdu;
+	unsigned tft;
+	unsigned alls;
+	unsigned tdu;
 
-  unsigned reserved3[5];
+	unsigned reserved3[5];
 
-  unsigned ctss;
-  unsigned dsrc;
-  unsigned cdc;
-  unsigned ctsa;
+	unsigned ctss;
+	unsigned dsrc;
+	unsigned cdc;
+	unsigned ctsa;
 
-  unsigned reserved4[4];
+	unsigned reserved4[4];
 };
 
 struct debug_interrupt_tracker *debug_interrupt_tracker_new(void);
 void debug_interrupt_tracker_delete(struct debug_interrupt_tracker *tracker);
-void debug_interrupt_tracker_increment_all(
-    struct debug_interrupt_tracker *tracker, __u32 isr_value);
-unsigned
-debug_interrupt_tracker_get_count(struct debug_interrupt_tracker *tracker,
-                                  __u32 isr_bit);
+void debug_interrupt_tracker_increment_all(struct debug_interrupt_tracker *tracker, __u32 isr_value);
+unsigned debug_interrupt_tracker_get_count(struct debug_interrupt_tracker *tracker, __u32 isr_bit);
 void debug_interrupt_display(unsigned long data);
 
 #endif

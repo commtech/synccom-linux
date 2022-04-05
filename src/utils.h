@@ -23,30 +23,29 @@ THE SOFTWARE.
 #ifndef SYNCCOM_UTILS_H
 #define SYNCCOM_UTILS_H
 
-#include "config.h"  /* DEVICE_NAME */
-#include "port.h"    /* struct synccom_port */
 #include "synccom.h" /* struct synccom_registers */
+#include "port.h" /* struct synccom_port */
+#include "config.h" /* DEVICE_NAME */
 
-#define warn_if_untrue(expr)                                                   \
-  if (expr) {                                                                  \
-  } else {                                                                     \
-    printk(KERN_WARNING DEVICE_NAME " %s %s\n", #expr, "is untrue.");          \
-  }
+#define warn_if_untrue(expr) \
+	if (expr) {} else \
+	{ \
+		printk(KERN_WARNING DEVICE_NAME " %s %s\n", #expr, "is untrue."); \
+	}
 
-#define return_if_untrue(expr)                                                 \
-  if (expr) {                                                                  \
-  } else {                                                                     \
-    printk(KERN_ERR DEVICE_NAME " %s %s\n", #expr, "is untrue.");              \
-    return;                                                                    \
-  }
+#define return_if_untrue(expr) \
+	if (expr) {} else \
+	{ \
+		printk(KERN_ERR DEVICE_NAME " %s %s\n", #expr, "is untrue."); \
+		return; \
+	}
 
-#define return_val_if_untrue(expr, val)                                        \
-  if (expr) {                                                                  \
-  } else {                                                                     \
-    printk(KERN_ERR DEVICE_NAME " %s %s %s\n", #expr, "is untrue, returning",  \
-           #val);                                                              \
-    return val;                                                                \
-  }
+#define return_val_if_untrue(expr, val) \
+	if (expr) {} else \
+	{ \
+		printk(KERN_ERR DEVICE_NAME " %s %s %s\n", #expr, "is untrue, returning", #val); \
+		return val; \
+	}
 
 __u32 chars_to_u32(const char *data);
 int str_to_register_offset(const char *str);
