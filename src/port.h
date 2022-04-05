@@ -135,6 +135,7 @@ struct synccom_port {
 	struct tasklet_struct iframe_tasklet;
 	struct tasklet_struct istream_tasklet;
 	struct tasklet_struct send_oframe_tasklet;
+	struct tasklet_struct clear_oframe_tasklet;
 	struct tasklet_struct bytecount_list_tasklet;
 
 
@@ -238,7 +239,8 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
 							unsigned register_offset, __u32 value,
 							int need_lock);
 
-int synccom_port_send_data(struct synccom_port *port, char *data,
+void synccom_port_send_data(struct synccom_port *port, unsigned bar,
+								unsigned register_offset, char *data,
 								unsigned byte_count);
 
 int synccom_port_purge_tx(struct synccom_port *port);
