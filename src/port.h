@@ -123,6 +123,7 @@ struct synccom_port {
   struct synccom_frame *pending_iframe; /* Frame retrieving from the FIFO */
   struct synccom_frame *pending_oframe; /* Frame being put in the FIFO */
   struct synccom_frame *istream;        /* Transparent stream */
+  struct synccom_frame *data_chunks;    /* Temporary data storage */
 
   struct synccom_registers register_storage; /* Only valid on suspend/resume */
   struct synccom_memory_cap memory_cap;

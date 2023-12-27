@@ -262,59 +262,24 @@ int synccom_frame_update_buffer_size(struct synccom_frame *frame,
 }
 
 void update_bc_buffer(struct synccom_port *port) {
-  int i = 0, do_once = 0;
-  int frame_count, byte_count;
-  unsigned long queued_flags = 0, stream_flags = 0, pending_iframes = 0;
+  int i, frame_count;
+  unsigned long queued_flags = 0;
   struct synccom_frame *frame;
 
   mutex_lock(&port->register_access_mutex);
   frame_count = synccom_port_get_register(port, 0, FIFO_FC_OFFSET, 0) & 0x3ff;
   // This loop may never run, and that's actually okay.
   for (i = 0; i < frame_count; i++) {
-    byte_count = synccom_port_get_register(port, 0, BC_FIFO_L_OFFSET, 0);
-    dev_dbg(port->device, "New frame size: %d", byte_count);
     frame = synccom_frame_new(port);
-    frame->frame_size = byte_count;
+    frame->frame_size = synccom_port_get_register(port, 0, BC_FIFO_L_OFFSET, 0);
+    SET_TIMESTAMP(&frame->timestamp);
+    dev_dbg(port->device, "New frame size: %d", frame->frame_size);
 
-    spin_lock_irqsave(&port->pending_iframes_spinlock, pending_iframes);
-    synccom_flist_add_frame(&port->pending_iframes, frame);
-    spin_unlock_irqrestore(&port->pending_iframes_spinlock, pending_iframes);
-  }
-  mutex_unlock(&port->register_access_mutex);
-
-  spin_lock_irqsave(&port->pending_iframes_spinlock, pending_iframes);
-  spin_lock_irqsave(&port->istream_spinlock, stream_flags);
-  do {
-    if (!port->istream)
-      break;
-    if (synccom_frame_get_length(port->istream) < 1)
-      break;
-    if (synccom_flist_is_empty(&port->pending_iframes))
-      break;
-    frame = synccom_flist_peek_front(&port->pending_iframes);
-    if (!frame)
-      break;
-    if (frame->frame_size < 1) {
-      frame = synccom_flist_remove_frame(&port->pending_iframes);
-      synccom_frame_delete(frame);
-      break;
-    }
-    if (synccom_frame_get_length(port->istream) <
-        (frame->frame_size - frame->lost_bytes))
-      break;
-    frame = synccom_flist_remove_frame(&port->pending_iframes);
-    synccom_frame_transfer_data(frame, port->istream,
-                                (frame->frame_size - frame->lost_bytes));
-    // append_timestamp
-    dev_dbg(port->device, "F#%d <=: %d, data: %d", frame->number,
-            frame->frame_size, frame->data_length);
     spin_lock_irqsave(&port->queued_iframes_spinlock, queued_flags);
     synccom_flist_add_frame(&port->queued_iframes, frame);
     spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
-    frame = 0;
-  } while (do_once);
-  spin_unlock_irqrestore(&port->istream_spinlock, stream_flags);
-  spin_unlock_irqrestore(&port->pending_iframes_spinlock, pending_iframes);
+  }
+  mutex_unlock(&port->register_access_mutex);
 
   wake_up_interruptible(&port->input_queue);
 }

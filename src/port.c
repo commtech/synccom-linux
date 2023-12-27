@@ -230,6 +230,7 @@ ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf,
   unsigned remaining_buf_length = 0;
   int max_frame_length = 0;
   unsigned current_frame_length = 0;
+  unsigned stream_length = 0;
   unsigned out_length = 0;
   unsigned long queued_flags = 0;
 
@@ -249,18 +250,28 @@ ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf,
       break;
 
     spin_lock_irqsave(&port->queued_iframes_spinlock, queued_flags);
-    frame = synccom_flist_remove_frame_if_lte(&port->queued_iframes,
-                                              max_frame_length);
+    frame = synccom_flist_peek_front(&port->queued_iframes);
+    if(!frame) {
+        spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
+        break;
+    }
+    current_frame_length = synccom_frame_get_frame_size(frame);
+    stream_length = synccom_frame_get_length(port->istream);
+    if((current_frame_length > max_frame_length) || (stream_length < current_frame_length)) {
+        spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
+        break;
+    }
+    frame = synccom_flist_remove_frame(&port->queued_iframes);
     spin_unlock_irqrestore(&port->queued_iframes_spinlock, queued_flags);
 
-    if (!frame)
-      break;
-
-    current_frame_length = synccom_frame_get_length(frame);
     current_frame_length -= (!port->append_status) ? 2 : 0;
-
-    synccom_frame_remove_data(frame, buf + out_length, current_frame_length);
+    spin_lock_irqsave(&port->istream_spinlock, queued_flags);
+    synccom_frame_remove_data(port->istream, buf + out_length, current_frame_length);
     out_length += current_frame_length;
+    if(!port->append_status) {
+        synccom_frame_remove_data(port->istream, NULL, 2);
+    }
+    spin_unlock_irqrestore(&port->istream_spinlock, queued_flags);
 
     if (port->append_timestamp) {
       memcpy(buf + out_length, &frame->timestamp, sizeof(frame->timestamp));
@@ -288,7 +299,7 @@ ssize_t synccom_port_read(struct synccom_port *port, char *buf, size_t count) {
 
 unsigned synccom_port_has_incoming_data(struct synccom_port *port) {
   unsigned status = 0;
-  unsigned long irq_flags = 0;
+  unsigned long irq_flags = 0, irq_flags2 = 0;
 
   return_val_if_untrue(port, 0);
 
@@ -297,9 +308,16 @@ unsigned synccom_port_has_incoming_data(struct synccom_port *port) {
     status = (synccom_frame_is_empty(port->istream)) ? 0 : 1;
     spin_unlock_irqrestore(&port->istream_spinlock, irq_flags);
   } else {
-    spin_lock_irqsave(&port->queued_iframes_spinlock, irq_flags);
-    status = (synccom_flist_is_empty(&port->queued_iframes)) ? 0 : 1;
-    spin_unlock_irqrestore(&port->queued_iframes_spinlock, irq_flags);
+    struct synccom_frame *frame = 0;
+    spin_lock_irqsave(&port->istream_spinlock, irq_flags);
+    spin_lock_irqsave(&port->queued_iframes_spinlock, irq_flags2);
+    frame = synccom_flist_peek_front(&port->queued_iframes);
+    if (!frame || (frame->frame_size > synccom_frame_get_length(port->istream)))
+        status = 0;
+    else
+        status = 1;
+    spin_unlock_irqrestore(&port->queued_iframes_spinlock, irq_flags2);
+    spin_unlock_irqrestore(&port->istream_spinlock, irq_flags);
   }
 
   return status;
@@ -352,7 +370,7 @@ static void write_register_callback(struct urb *urb) {
 static void read_data_callback(struct urb *urb) {
   struct synccom_port *port;
   int transfer_size = 0;
-  size_t payload = 0;
+  unsigned payload = 0;
   int i = 0;
   unsigned char temp = 0;
   unsigned char *data_buffer = 0;
@@ -398,7 +416,7 @@ static void read_data_callback(struct urb *urb) {
       // data, and comparing it to the first two bytes. It's not perfect.
       // This needs to be resolved in the firmware.
       dev_info(port->device,
-        "Payload wrong, using buffer_size! Payload: %ld, Size: %d, first two bytes 0x%2.2x 0x%2.2x",
+        "Payload wrong, using buffer_size! Payload: %d, Size: %d, first two bytes 0x%2.2x 0x%2.2x",
         payload, transfer_size, data_buffer[0], data_buffer[1]);
       payload = transfer_size - 2;
   }
@@ -408,7 +426,7 @@ static void read_data_callback(struct urb *urb) {
 
   if (synccom_port_get_input_memory_usage(port) + payload >
       synccom_port_get_input_memory_cap(port)) {
-    dev_warn(port->device, "Input memory overflow - discarding data.");
+    dev_warn(port->device, "Input memory overflow - discarding data. Cap: %d, Size: %d", synccom_port_get_input_memory_cap(port), synccom_port_get_input_memory_usage(port) + payload);
     usb_submit_urb(urb, GFP_ATOMIC);
     return;
   }

@@ -29,8 +29,10 @@ THE SOFTWARE.
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 typedef struct timespec64 synccom_timestamp;
+#define SET_TIMESTAMP(x) ktime_get_ts64(x)
 #else
 typedef struct timeval synccom_timestamp;
+#define SET_TIMESTAMP(x) do_gettimeofday(x)
 #endif
 
 struct synccom_frame {
