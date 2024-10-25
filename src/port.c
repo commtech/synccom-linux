@@ -36,6 +36,14 @@ void synccom_port_execute_STOP_T(struct synccom_port *port);
 void synccom_port_execute_RST_R(struct synccom_port *port);
 static void read_data_callback(struct urb *urb);
 void frame_count_worker(struct work_struct *port);
+unsigned synccom_port_timed_out(struct synccom_port *port, int need_lock);
+ssize_t synccom_port_stream_read(struct synccom_port *port, char *buf, size_t length);
+ssize_t synccom_port_frame_read(struct synccom_port *port, char *buf, size_t length);
+int synccom_port_write_data(struct synccom_port *port, char *data, unsigned byte_count);
+void synccom_port_set_clock(struct synccom_port *port, unsigned bar, unsigned register_offset, char *data, unsigned byte_count);
+__u16 synccom_port_get_PDEV(struct synccom_port *port);
+unsigned synccom_port_get_CE(struct synccom_port *port);
+int prepare_frame_for_fifo(struct synccom_port *port, struct synccom_frame *frame, unsigned *length);
 
 int initialize(struct synccom_port *port) {
   int i;

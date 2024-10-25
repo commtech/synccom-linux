@@ -58,6 +58,8 @@ MODULE_DEVICE_TABLE(usb, synccom_table);
 
 static struct usb_driver synccom_driver;
 static void synccom_draw_down(struct synccom_port *port);
+unsigned synccom_poll(struct file *file, struct poll_table_struct *wait);
+long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static void synccom_delete(struct kref *kref) {
   struct synccom_port *port = to_synccom_dev(kref);
