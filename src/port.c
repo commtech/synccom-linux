@@ -129,7 +129,7 @@ int initialize(struct synccom_port *port) {
   for (i = 0; i < NUMBER_OF_URBS; i++) {
     usb_submit_urb(port->bulk_in_urbs[i], GFP_ATOMIC);
   }
-
+  port->fx2_rev = synccom_port_get_fx2(port, 1);
   return 0;
 }
 
@@ -354,6 +354,7 @@ static void write_data_callback(struct urb *urb) {
   usb_free_urb(urb);
 }
 
+/*
 static void write_register_callback(struct urb *urb) {
   struct synccom_port *port;
   int transfer_size = 0;
@@ -374,6 +375,7 @@ static void write_register_callback(struct urb *urb) {
   transfer_size = urb->actual_length;
   usb_free_urb(urb);
 }
+*/
 
 static void read_data_callback(struct urb *urb) {
   struct synccom_port *port;
@@ -483,15 +485,12 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
   if (need_lock) {
     mutex_lock(&port->register_access_mutex);
   }
-  usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, 3, &count,
-               HZ * 10);
-  usb_bulk_msg(port->udev, usb_rcvbulkpipe(port->udev, 1), value,
-               sizeof(*value), &count, HZ * 10);
+  usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, sizeof(msg), &count, HZ * 10);
+  usb_bulk_msg(port->udev, usb_rcvbulkpipe(port->udev, 1), value, sizeof(value), &count, HZ * 10);
   if (need_lock) {
     mutex_unlock(&port->register_access_mutex);
   }
-  fvalue = ((*value >> 24) & 0xff) | ((*value << 8) & 0xff0000) |
-           ((*value >> 8) & 0xff00) | ((*value << 24) & 0xff000000);
+  fvalue = ((*value>>24)&0xff) | ((*value<<8)&0xff0000) | ((*value>>8)&0xff00) | ((*value<<24)&0xff000000);
 
   kfree(msg);
   kfree(value);
@@ -502,20 +501,14 @@ __u32 synccom_port_get_register(struct synccom_port *port, unsigned bar,
 int synccom_port_set_register(struct synccom_port *port, unsigned bar,
                               unsigned register_offset, __u32 value,
                               int need_lock) {
-  struct urb *register_urb;
   unsigned offset = 0;
   int command = 0x6a;
   char *msg;
-  int retval;
+  int count;
 
-  // TODO just temporary until I get rid of need_lock
-  retval = need_lock;
   return_val_if_untrue(port, 0);
   return_val_if_untrue(bar <= 2, 0);
 
-  register_urb = usb_alloc_urb(0, GFP_ATOMIC);
-  if (!register_urb)
-    return -1;
   offset = port_offset(port, bar, register_offset);
 
   msg = kmalloc(7, GFP_KERNEL);
@@ -526,9 +519,13 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
   msg[4] = (value >> 16) & 0xFF;
   msg[5] = (value >> 8) & 0xFF;
   msg[6] = value & 0xFF;
-  usb_fill_bulk_urb(register_urb, port->udev, usb_sndbulkpipe(port->udev, 1),
-                    msg, 7, write_register_callback, port);
-  retval = usb_submit_urb(register_urb, GFP_ATOMIC);
+  if (need_lock) {
+    mutex_lock(&port->register_access_mutex);
+  }
+  usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, sizeof(msg), &count, HZ*10);
+  if (need_lock) {
+    mutex_unlock(&port->register_access_mutex);
+  }
   kfree(msg);
 
   if (bar == 0) {
@@ -555,8 +552,104 @@ int synccom_port_set_register(struct synccom_port *port, unsigned bar,
   }
 
   return 1;
-  // return retval;
 }
+
+unsigned synccom_port_can_support_nonvolatile(struct synccom_port *port) {
+  if(port->fx2_rev >= FIRST_NONVOLATILE_VERSION) return 1;
+  return 0;
+}
+
+__u32 synccom_port_get_nonvolatile(struct synccom_port *port, int need_lock) {
+  __u32 *value = NULL;
+  char *msg = NULL;
+  __u32 fvalue = 0;
+  int count;
+  int retval;
+
+  return_val_if_untrue(port, 0);
+
+  msg = kmalloc(1, GFP_KERNEL);
+  value = kmalloc(sizeof(__u32) * 1, GFP_KERNEL);
+
+  msg[0] = SYNCCOM_READ_NONVOLATILE;
+
+  if (need_lock) {
+    mutex_lock(&port->register_access_mutex);
+  }
+  retval = usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, sizeof(msg), &count, HZ * 10);
+  retval = usb_bulk_msg(port->udev, usb_rcvbulkpipe(port->udev, 1), value, sizeof(value), &count, HZ * 10);
+  if (need_lock) {
+    mutex_unlock(&port->register_access_mutex);
+  }
+  fvalue = ((*value >> 24) & 0xff) | ((*value << 8) & 0xff0000) |
+           ((*value >> 8) & 0xff00) | ((*value << 24) & 0xff000000);
+
+  dev_dbg(port->device, "GET nonvolatile: %08x\n", fvalue);
+  kfree(msg);
+  kfree(value);
+  return fvalue;
+}
+
+int synccom_port_set_nonvolatile(struct synccom_port *port, __u32 value, int need_lock) {
+  char *msg = NULL;
+  int retval = 0;
+  int count;
+
+  return_val_if_untrue(port, 0);
+
+  msg = kmalloc(5, GFP_KERNEL);
+  msg[0] = SYNCCOM_WRITE_NONVOLATILE;
+  msg[1] = (value >> 24) & 0xFF;
+  msg[2] = (value >> 16) & 0xFF;
+  msg[3] = (value >> 8) & 0xFF;
+  msg[4] = value & 0xFF;
+
+  if (need_lock) {
+    mutex_lock(&port->register_access_mutex);
+  }
+  retval = usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, sizeof(msg), &count, HZ*10);
+  if (need_lock) {
+    mutex_unlock(&port->register_access_mutex);
+  }
+  kfree(msg);
+  dev_dbg(port->device, "SET nonvolatile: %08x\n", value);
+
+  return 1;
+}
+
+
+__u32 synccom_port_get_fx2(struct synccom_port *port, int need_lock) {
+  char *value = NULL;
+  char *msg = NULL;
+  __u32 fvalue = 0;
+  int count;
+
+  return_val_if_untrue(port, 0);
+
+  msg = kzalloc(1, GFP_KERNEL);
+  value = kzalloc(2, GFP_KERNEL);
+
+  msg[0] = SYNCCOM_READ_FX2_FIRMWARE;
+
+  if (need_lock) {
+    mutex_lock(&port->register_access_mutex);
+  }
+  usb_bulk_msg(port->udev, usb_sndbulkpipe(port->udev, 1), msg, 1, &count, HZ * 10);
+  usb_bulk_msg(port->udev, usb_rcvbulkpipe(port->udev, 1), value, 2, &count, HZ * 10);
+  if (need_lock) {
+    mutex_unlock(&port->register_access_mutex);
+  }
+
+  fvalue = value[0];
+  fvalue = (fvalue << 8) | value[1];
+
+  kfree(msg);
+  kfree(value);
+
+  dev_dbg(port->device, "FX2: 0x%08x\n", fvalue);
+  return fvalue;
+}
+
 
 int synccom_port_write_data(struct synccom_port *port, char *data,
                             unsigned byte_count) {

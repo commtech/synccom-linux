@@ -97,6 +97,31 @@ THE SOFTWARE.
 #define NUMBER_OF_URBS 8
 #define URB_BUFFER_SIZE 512
 
+#define REGISTER_WRITE_ENDPOINT 0x01
+#define REGISTER_READ_ENDPOINT 0x81
+#define DATA_WRITE_ENDPOINT 0x06
+#define DATA_READ_ENDPOINT 0x82
+
+#define FIRST_NONVOLATILE_VERSION 0x110
+
+// These are defined in the firmware, so shouldn't be changed unless you are 100% sure
+// you know what you are doing.
+#define SYNCCOM_READ_FX2_FIRMWARE	0x02 // write: 0x02
+					     // read : (value - 4B)
+#define SYNCCOM_WRITE_REGISTER		0x6A // write: 0x6A (address - 2B) (value - 4B)
+#define SYNCCOM_READ_REGISTER		0x6B // write: 0x6B (address - 2B)
+					     // read : (value - 4B)
+#define SYNCCOM_READ_WITH_ADDRESS	0x6C // write: 0x6C (address - 2B)
+					     // read : (address - 2B) (value - 4B)
+#define SYNCCOM_READ_WAIT_HIGH_VAL  	0x6D // write: 0x6D (address - 2B) (timeout - 1B) (mask - 4B)
+					     // read : (address - 2B) (value - 4B)
+#define SYNCCOM_WRITE_NONVOLATILE	0x6E // write: 0x6E (value - 4B)
+#define SYNCCOM_READ_NONVOLATILE	0x6F // write: 0x6F
+					     // read : (value - 4B)
+#define SYNCCOM_GET_STATUS		0xFE
+
+
+
 struct synccom_port {
   struct list_head list;
   dev_t dev_t;
@@ -128,12 +153,13 @@ struct synccom_port {
   struct synccom_registers register_storage; /* Only valid on suspend/resume */
   struct synccom_memory_cap memory_cap;
 
-  unsigned last_isr_value;
+  __u32 last_isr_value;
   unsigned append_status;
   unsigned append_timestamp;
   unsigned ignore_timeout;
   unsigned rx_multiple;
   int tx_modifiers;
+  __u32 fx2_rev;
 
   spinlock_t board_rx_spinlock; /* Anything that will alter the state of rx at a
                                    board level */
@@ -248,6 +274,11 @@ void synccom_port_get_registers(struct synccom_port *port,
 
 unsigned synccom_port_is_streaming(struct synccom_port *port);
 unsigned synccom_port_has_incoming_data(struct synccom_port *port);
+
+unsigned synccom_port_can_support_nonvolatile(struct synccom_port *port);
+__u32 synccom_port_get_fx2(struct synccom_port *port, int need_lock);
+int synccom_port_set_nonvolatile(struct synccom_port *port, __u32 value, int need_lock);
+__u32 synccom_port_get_nonvolatile(struct synccom_port *port, int need_lock);
 
 #ifdef DEBUG
 unsigned synccom_port_get_interrupt_count(struct synccom_port *port,

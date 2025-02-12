@@ -386,7 +386,24 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
       return -EFAULT;
     }
     break;
-
+  case SYNCCOM_SET_NONVOLATILE:
+    if(!synccom_port_can_support_nonvolatile(port)) {
+      error_code = -EINVAL;
+      break;
+    }
+    tmp_int = (unsigned int)arg;
+    error_code = synccom_port_set_nonvolatile(port, tmp_int, 1);
+    break;
+  case SYNCCOM_GET_NONVOLATILE:
+    if(!synccom_port_can_support_nonvolatile(port)) {
+      error_code = -EINVAL;
+      break;
+    }
+    tmp_int = synccom_port_get_nonvolatile(port, 1);
+    if (copy_to_user((void *)arg, &tmp_int, sizeof(tmp_int))) {
+      return -EFAULT;
+    }
+    break;
   case SYNCCOM_REPROGRAM:
     program_synccom(port, (char *)arg);
     break;
