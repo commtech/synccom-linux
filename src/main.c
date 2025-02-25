@@ -253,6 +253,7 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
   struct synccom_port *port = 0;
   long error_code = 0;
   char clock_bits[20];
+  char firmware_line[50];
   unsigned int tmp_int = 0;
   struct synccom_registers regs;
   struct synccom_memory_cap tmp_memcap;
@@ -405,7 +406,10 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     }
     break;
   case SYNCCOM_REPROGRAM:
-    program_synccom(port, (char *)arg);
+    if (copy_from_user(firmware_line, (char *)arg, 50)) {
+      return -EFAULT;
+    }
+    program_synccom(port, firmware_line);
     break;
   default:
     dev_dbg(port->device, "%s - unknown ioctl 0x%x\n", __func__, cmd);
