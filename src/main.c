@@ -370,7 +370,10 @@ long synccom_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     break;
 
   case SYNCCOM_GET_TX_MODIFIERS:
-    *(unsigned *)arg = synccom_port_get_tx_modifiers(port);
+    tmp_int = synccom_port_get_tx_modifiers(port);
+    if (copy_to_user((void *)arg, &tmp_int, sizeof(tmp_int))) {
+      return -EFAULT;
+    }
     break;
 
   case SYNCCOM_ENABLE_RX_MULTIPLE:
